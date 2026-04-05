@@ -349,21 +349,33 @@ def stream_download_and_search(
         status.update({"stage": "downloading", "message": "Starting download..."})
         extra_args = [target_url]
 
+    # Write cookies file if YOUTUBE_COOKIES env var is set
+    cookies_file = None
+    cookies_b64 = os.getenv("YOUTUBE_COOKIES")
+    if cookies_b64:
+        import base64, tempfile
+        cookies_file = tempfile.NamedTemporaryFile(
+            mode="wb", suffix=".txt", delete=False
+        )
+        cookies_file.write(base64.b64decode(cookies_b64))
+        cookies_file.close()
+
     cmd = [
         sys.executable, "-m", "yt_dlp",
         "--skip-download", "--write-sub", "--write-auto-sub",
         "--sub-lang", "en", "--sub-format", "vtt",
         "--output", str(out_dir / "%(upload_date)s_%(id)s_%(title)s.%(ext)s"),
         "--no-warnings", "--ignore-errors",
-    ] + extra_args
+    ]
+    if cookies_file:
+        cmd += ["--cookies", cookies_file.name]
+    cmd += extra_args
 
-    status["log_lines"].append(f"DBG cmd: {' '.join(cmd)}")
     proc = subprocess.Popen(
         cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
         text=True, encoding="utf-8", errors="replace",
     )
     current_proc = proc
-    status["log_lines"].append(f"DBG proc started pid={proc.pid}")
 
     current_vtt: Optional[Path] = None
     current_video_id: Optional[str] = None
@@ -425,7 +437,6 @@ def stream_download_and_search(
             break
 
         line = raw_line.strip()
-        log(f"DBG: {repr(line)}")  # TEMP DEBUG
         if not line:
             continue
 
@@ -498,6 +509,8 @@ def stream_download_and_search(
     flush_and_log()  # flush final item
     if batch_file:
         os.unlink(batch_file)
+    if cookies_file:
+        os.unlink(cookies_file.name)
 
 
 # --- Background task ---
