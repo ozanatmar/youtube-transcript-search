@@ -474,11 +474,13 @@ def stream_download_and_search(
         # Detect VTT file path (new download, re-download destination, or already cached)
         m = WRITE_LINE.search(line) or DEST_LINE.search(line) or ALREADY_LINE.search(line)
         if m:
-            current_vtt = Path(m.group(1))
-            has_transcript = True
-            title = _vtt_title(current_vtt)
-            p = prefix(current_item, current_total)
-            log(f"\u29d7{p}[{title}]")  # stub line; replaced when result known
+            vtt_path = Path(m.group(1))
+            if current_vtt != vtt_path:  # only log stub once per file
+                current_vtt = vtt_path
+                has_transcript = True
+                title = _vtt_title(current_vtt)
+                p = prefix(current_item, current_total)
+                log(f"\u29d7{p}[{title}]")  # stub line; replaced when result known
             continue
 
         # 100% done — flush immediately (fast path)
