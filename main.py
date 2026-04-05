@@ -60,21 +60,60 @@ def misspellings(word: str) -> list[str]:
 
 
 def expand_name(name: str) -> list[str]:
-    parts = name.strip().split()
+    # Strip dots so "R." → "r", "O." → "o"
+    parts = [p.lower().strip(".") for p in name.strip().split() if p.strip(".")]
     variants = set()
+
+    if len(parts) == 0:
+        return []
+
     if len(parts) == 1:
-        variants.add(parts[0].lower())
-    elif len(parts) >= 2:
-        first, last = parts[0].lower(), parts[-1].lower()
+        variants.add(parts[0])
+
+    elif len(parts) == 2:
+        first, last = parts
         variants.update([
             f"{first} {last}", f"{first}{last}",
-            f"{first[0]}{last}", f"{first}{last[0]}",
+            f"{first[0]} {last}", f"{first[0]}{last}",
             last, first,
         ])
-        for m in misspellings(first):
-            variants.update([m, f"{m} {last}", f"{m}{last}"])
-        for m in misspellings(last):
-            variants.update([m, f"{first} {m}", f"{first}{m}"])
+        for ms in misspellings(first):
+            variants.update([ms, f"{ms} {last}", f"{ms}{last}"])
+        for ms in misspellings(last):
+            variants.update([ms, f"{first} {ms}", f"{first}{ms}"])
+
+    else:  # 3+ parts
+        first, last = parts[0], parts[-1]
+        middles = parts[1:-1]
+
+        # Full name and subsets
+        variants.add(" ".join(parts))
+        variants.update([f"{first} {last}", last, first])
+        for mid in middles:
+            variants.update([mid, f"{mid} {last}", f"{first} {mid} {last}"])
+
+        # Initial forms
+        # First initial + last
+        variants.update([f"{first[0]} {last}", f"{first[0]}{last}"])
+        # Middle initial(s) + last
+        for mid in middles:
+            variants.update([f"{mid[0]} {last}", f"{mid[0]}{last}"])
+        # First initial + middles + last
+        mid_str = " ".join(middles)
+        variants.add(f"{first[0]} {mid_str} {last}")
+        # First + middle initials + last
+        mid_inits = " ".join(m[0] for m in middles)
+        variants.add(f"{first} {mid_inits} {last}")
+
+        # Misspellings of first, last, and each middle
+        for ms in misspellings(first):
+            variants.update([ms, f"{ms} {last}", f"{ms} {mid_str} {last}"])
+        for ms in misspellings(last):
+            variants.update([ms, f"{first} {ms}", f"{first} {mid_str} {ms}"])
+        for mid in middles:
+            for ms in misspellings(mid):
+                variants.update([ms, f"{ms} {last}", f"{first} {ms} {last}"])
+
     return [v for v in variants if len(v) > 1]
 
 
