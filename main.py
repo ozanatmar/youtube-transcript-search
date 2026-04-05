@@ -440,9 +440,6 @@ def stream_download_and_search(
         line = raw_line.strip()
         if not line:
             continue
-        # TEMP: log all yt-dlp output for debugging
-        if not DETAIL_LINE.match(line):
-            status["log_lines"].append(f">> {line}")
 
         # Log playlist loading once
         if "Downloading API JSON" in line and not playlist_logged:
