@@ -36,6 +36,7 @@ status: dict = {
     "total_matches": 0,
     "total_videos_searched": 0,
     "terms": [],
+    "report": None,
 }
 
 current_proc: Optional[subprocess.Popen] = None
@@ -152,7 +153,42 @@ def extract_context(text: str, match_start: int, match_end: int, window: int = 2
     return snippet
 
 
-# --- LLM verification ---
+# --- LLM ---
+
+def generate_report(matches: list[dict], target_name: str) -> str:
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    if not api_key:
+        return "No API key configured — report unavailable."
+    try:
+        import anthropic
+        lines = []
+        for i, m in enumerate(matches[:150]):
+            ts = fmttime(m["match_timestamp"]) if m.get("match_timestamp") else "?"
+            url = f"https://youtube.com/watch?v={m['video_id']}&t={m['match_timestamp']}s"
+            year = m["upload_date"][:4] if m.get("upload_date", "unknown") != "unknown" else "?"
+            lines.append(
+                f"{i+1}. \"{m['video_title']}\" ({year}) | {ts} | {url}\n"
+                f"   matched: \"{m['matched_term']}\" | context: {m['context'][:200]}"
+            )
+        prompt = (
+            f"I searched YouTube transcripts for mentions of \"{target_name}\" and found {len(matches)} match(es).\n\n"
+            f"{'(Showing first 150)' if len(matches) > 150 else ''}\n\n"
+            + "\n\n".join(lines)
+            + f"\n\nWrite a concise report:\n"
+            f"1. Confirmed — matches clearly referring to {target_name}\n"
+            f"2. Ambiguous — could be this person, worth checking\n"
+            f"3. Coincidental — different person or common word\n\n"
+            f"For each confirmed or ambiguous match include the timestamp URL. Be direct and concise."
+        )
+        client = anthropic.Anthropic(api_key=api_key)
+        msg = client.messages.create(
+            model=LLM_MODEL, max_tokens=2000,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        return msg.content[0].text.strip()
+    except Exception as e:
+        return f"Report generation failed: {e}"
+
 
 def llm_verify(context: str, matched_term: str, target_name: str) -> tuple[str, str]:
     api_key = os.getenv("ANTHROPIC_API_KEY")
@@ -585,6 +621,13 @@ def run_search(
         v = status["total_videos_searched"]
         summary = f"Search complete — {m} match{'es' if m != 1 else ''} found across {v} video{'s' if v != 1 else ''} with transcripts."
         status["log_lines"].append(summary)
+
+        if m > 0 and os.getenv("ANTHROPIC_API_KEY"):
+            status["log_lines"].append("Generating AI report...")
+            status["report"] = "generating"
+            status["report"] = generate_report(status["results"], name)
+            status["log_lines"][-1] = "AI report ready."
+
         status.update({
             "stage": "done",
             "message": f"Done. Found {m} matches across {v} videos.",
@@ -621,7 +664,7 @@ async def search(req: SearchRequest, background_tasks: BackgroundTasks):
         "stage": "starting",
         "videos_done": 0, "videos_total": 0,
         "message": "Initializing...",
-        "log_lines": [], "results": [], "terms": [],
+        "log_lines": [], "results": [], "terms": [], "report": None,
         "total_matches": 0, "total_videos_searched": 0,
         "result": None,
     })

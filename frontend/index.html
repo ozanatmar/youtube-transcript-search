@@ -205,13 +205,50 @@
     /* ── Right panel ── */
     #right {
       flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    #tab-bar {
+      display: flex;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    .tab-btn {
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      color: var(--muted2);
+      font-family: var(--font);
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      padding: 10px 18px;
+      cursor: pointer;
+      margin-bottom: -1px;
+    }
+    .tab-btn:hover { color: var(--text); }
+    .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+    .tab-content {
+      flex: 1;
       overflow-y: auto;
       padding: 20px 24px;
     }
 
-    #right::-webkit-scrollbar { width: 4px; }
-    #right::-webkit-scrollbar-track { background: transparent; }
-    #right::-webkit-scrollbar-thumb { background: var(--border); }
+    .tab-content::-webkit-scrollbar { width: 4px; }
+    .tab-content::-webkit-scrollbar-track { background: transparent; }
+    .tab-content::-webkit-scrollbar-thumb { background: var(--border); }
+
+    #report-content {
+      font-size: 13px;
+      line-height: 1.8;
+      color: var(--text);
+      white-space: pre-wrap;
+    }
+    #report-content a { color: var(--accent); text-decoration: none; }
+    #report-content a:hover { text-decoration: underline; }
 
     #results-placeholder {
       color: var(--muted);
@@ -401,10 +438,19 @@
     </div>
   </div>
 
-  <!-- RIGHT: results -->
+  <!-- RIGHT: tabs + content -->
   <div id="right">
-    <div id="summary-line"></div>
-    <div id="results-placeholder">// results will appear here</div>
+    <div id="tab-bar">
+      <button class="tab-btn active" onclick="switchTab('results')">Results</button>
+      <button class="tab-btn" onclick="switchTab('report')">AI Report</button>
+    </div>
+    <div id="tab-results" class="tab-content">
+      <div id="summary-line"></div>
+      <div id="results-placeholder">// results will appear here</div>
+    </div>
+    <div id="tab-report" class="tab-content" style="display:none;">
+      <div id="report-content" style="color:var(--muted);">// AI report will appear after search completes</div>
+    </div>
   </div>
 
 </div>
@@ -417,6 +463,35 @@
     wrap.style.display = hidden ? 'block' : 'none';
     this.textContent = hidden ? '− additional terms' : '+ additional terms';
   });
+
+  function switchTab(name) {
+    document.getElementById('tab-results').style.display = name === 'results' ? '' : 'none';
+    document.getElementById('tab-report').style.display  = name === 'report'  ? '' : 'none';
+    document.querySelectorAll('.tab-btn').forEach((b, i) => {
+      b.classList.toggle('active', (i === 0) === (name === 'results'));
+    });
+  }
+
+  let lastReport = null;
+
+  function updateReport(report) {
+    if (report === lastReport) return;
+    lastReport = report;
+    const el = document.getElementById('report-content');
+    if (!report) {
+      el.style.color = 'var(--muted)';
+      el.innerHTML = '// AI report will appear after search completes';
+    } else if (report === 'generating') {
+      el.style.color = 'var(--muted2)';
+      el.innerHTML = 'Generating AI report...';
+      // Auto-switch to report tab so user knows it's coming
+      switchTab('report');
+    } else {
+      el.style.color = '';
+      el.innerHTML = linkify(escHtml(report));
+      switchTab('report');
+    }
+  }
 
   function isVideoUrl(url) {
     return /watch\?v=|youtu\.be\//.test(url);
@@ -524,6 +599,7 @@
         lastResultCount = results.length;
       }
       updateSummary(data.total_matches, data.total_videos_searched);
+      updateReport(data.report);
 
       if (data.stage === 'done') {
         clearInterval(pollTimer);
@@ -586,18 +662,23 @@
 
   function clearResults() {
     document.getElementById('summary-line').innerHTML = '';
-    const right = document.getElementById('right');
+    const container = document.getElementById('tab-results');
     // Remove all groups, keep summary-line and placeholder
-    right.querySelectorAll('details').forEach(d => d.remove());
+    container.querySelectorAll('details').forEach(d => d.remove());
     const ph = document.getElementById('results-placeholder');
     if (!ph) {
       const p = document.createElement('div');
       p.id = 'results-placeholder';
       p.textContent = '// results will appear here';
-      right.appendChild(p);
+      container.appendChild(p);
     }
     lastResultCount = 0;
     groupOpenState.clear();
+    // Reset report tab
+    const rc = document.getElementById('report-content');
+    rc.style.color = 'var(--muted)';
+    rc.innerHTML = '// AI report will appear after search completes';
+    lastReport = null;
   }
 
   function updateSummary(matches, searched) {
@@ -611,7 +692,7 @@
   const groupOpenState = new Map(); // video_id → bool
 
   function renderGroupedResults(results) {
-    const right = document.getElementById('right');
+    const container = document.getElementById('tab-results');
     const ph = document.getElementById('results-placeholder');
     if (ph) ph.remove();
 
@@ -630,11 +711,11 @@
     }
 
     // Preserve open/closed state, default open
-    const existingDetails = right.querySelectorAll('details[data-vid]');
+    const existingDetails = container.querySelectorAll('details[data-vid]');
     existingDetails.forEach(d => groupOpenState.set(d.dataset.vid, d.open));
 
     // Re-render
-    const existing = new Set(Array.from(right.querySelectorAll('details[data-vid]')).map(d => d.dataset.vid));
+    const existing = new Set(Array.from(container.querySelectorAll('details[data-vid]')).map(d => d.dataset.vid));
     for (const [vid, g] of groups) {
       const date = g.upload_date && g.upload_date !== 'unknown'
         ? `${g.upload_date.slice(0,4)}-${g.upload_date.slice(4,6)}-${g.upload_date.slice(6,8)}` : '';
@@ -643,7 +724,7 @@
 
       if (existing.has(vid)) {
         // Update match count in existing group
-        const det = right.querySelector(`details[data-vid="${vid}"]`);
+        const det = container.querySelector(`details[data-vid="${vid}"]`);
         det.querySelector('.group-count').textContent = `${count} match${count !== 1 ? 'es' : ''}`;
         // Add any new match cards (already sorted, just append missing ones)
         const existingCards = det.querySelectorAll('.result-card').length;
@@ -666,7 +747,7 @@
           <div class="group-meta">${date ? date + ' · ' : ''}<span class="group-count">${count} match${count !== 1 ? 'es' : ''}</span></div>`;
         det.appendChild(sum);
         for (const m of g.matches) det.appendChild(makeMatchCard(m));
-        right.appendChild(det);
+        container.appendChild(det);
       }
     }
   }
