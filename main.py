@@ -32,6 +32,7 @@ status: dict = {
     "videos_total": 0,
     "message": "Ready",
     "log_lines": [],
+    "log_total": 0,
     "results": [],
     "total_matches": 0,
     "total_videos_searched": 0,
@@ -457,6 +458,7 @@ def stream_download_and_search(
 
     def log(msg: str):
         status["log_lines"].append(msg)
+        status["log_total"] += 1
         if len(status["log_lines"]) > 500:
             status["log_lines"] = status["log_lines"][-500:]
 
@@ -684,7 +686,7 @@ async def search(req: SearchRequest, background_tasks: BackgroundTasks):
         "stage": "starting",
         "videos_done": 0, "videos_total": 0,
         "message": "Initializing...",
-        "log_lines": [], "results": [], "terms": [], "report": None,
+        "log_lines": [], "log_total": 0, "results": [], "terms": [], "report": None,
         "total_matches": 0, "total_videos_searched": 0,
         "result": None,
     })

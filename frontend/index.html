@@ -560,8 +560,15 @@
 
       // Append new log lines (also handle in-place updates of the last line)
       const lines = data.log_lines || [];
-      if (lines.length === lastLogCount && lines.length > 0) {
-        // Last line may have been updated in-place (stub → result)
+      const logTotal = data.log_total || 0;
+      if (logTotal > lastLogCount) {
+        // New lines were appended — figure out how many
+        const newCount = logTotal - lastLogCount;
+        const newLines = lines.slice(-newCount);
+        for (const l of newLines) appendLog(l);
+        lastLogCount = logTotal;
+      } else if (logTotal === lastLogCount && lines.length > 0) {
+        // No new lines but last line may have been updated in-place (stub → result)
         const area = document.getElementById('log-area');
         const divs = area.querySelectorAll('.log-line');
         if (divs.length > 0) {
@@ -571,9 +578,6 @@
           divs[divs.length - 1].style.color = isStub ? 'var(--muted2)' : '';
           divs[divs.length - 1].innerHTML = linkify(escHtml(display));
         }
-      } else {
-        for (let i = lastLogCount; i < lines.length; i++) appendLog(lines[i]);
-        lastLogCount = lines.length;
       }
 
       // Search terms
