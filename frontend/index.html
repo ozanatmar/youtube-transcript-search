@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>YouTube Transcript Search</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0d0d0d;
+      --bg2: #111;
+      --bg3: #1a1a1a;
+      --border: #222;
+      --text: #e0e0e0;
+      --muted: #555;
+      --muted2: #888;
+      --accent: #4caf82;
+      --accent-dim: #1e4d36;
+      --warn: #e5a030;
+      --error: #e05050;
+      --match: #ffe082;
+      --font: 'Courier New', Courier, monospace;
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 13px;
+      line-height: 1.5;
+      overflow: hidden;
+    }
+
+    /* ── Top bar ── */
+    #topbar {
+      height: 42px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      padding: 0 20px;
+      gap: 24px;
+      flex-shrink: 0;
+    }
+
+    #topbar h1 {
+      font-size: 13px;
+      font-weight: normal;
+      color: var(--accent);
+      letter-spacing: 0.05em;
+      white-space: nowrap;
+    }
+
+    /* ── Main split ── */
+    #layout {
+      display: flex;
+      height: calc(100vh - 42px);
+    }
+
+    /* ── Left panel ── */
+    #left {
+      width: 510px;
+      min-width: 360px;
+      flex-shrink: 0;
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    #form-area {
+      padding: 16px;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    .fg {
+      margin-bottom: 10px;
+    }
+
+    label.lbl {
+      display: block;
+      color: var(--muted2);
+      font-size: 10px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: 4px;
+    }
+
+    input[type="text"] {
+      width: 100%;
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 13px;
+      padding: 7px 10px;
+      outline: none;
+    }
+    input[type="text"]:focus { border-color: #2a5c40; }
+
+    .row { display: flex; gap: 8px; align-items: center; }
+    .row input[type="text"] { flex: 1; }
+
+    .chk-label {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      color: var(--muted2);
+      font-size: 12px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .chk-label input { accent-color: var(--accent); }
+
+    .toggle-btn {
+      background: none;
+      border: none;
+      color: var(--muted);
+      font-family: var(--font);
+      font-size: 11px;
+      cursor: pointer;
+      padding: 2px 0;
+    }
+    .toggle-btn:hover { color: var(--muted2); }
+
+    textarea {
+      width: 100%;
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 12px;
+      padding: 7px 10px;
+      resize: vertical;
+      min-height: 60px;
+      outline: none;
+      margin-top: 5px;
+    }
+
+    #btn-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    .search-btn {
+      background: var(--accent-dim);
+      border: 1px solid var(--accent);
+      color: var(--accent);
+      font-family: var(--font);
+      font-size: 12px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      padding: 7px 20px;
+      cursor: pointer;
+    }
+    .search-btn:hover { background: #2a6644; }
+    .search-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .stop-btn {
+      background: none;
+      border: 1px solid var(--error);
+      color: var(--error);
+      font-family: var(--font);
+      font-size: 12px;
+      padding: 7px 14px;
+      cursor: pointer;
+      display: none;
+    }
+    .stop-btn:hover { background: rgba(224,80,80,0.1); }
+
+    /* ── Log panel ── */
+    #log-area {
+      flex: 1;
+      overflow-y: auto;
+      padding: 10px 14px;
+      background: var(--bg);
+    }
+
+    #log-area::-webkit-scrollbar { width: 4px; }
+    #log-area::-webkit-scrollbar-track { background: transparent; }
+    #log-area::-webkit-scrollbar-thumb { background: var(--border); }
+
+    .log-line {
+      font-size: 11px;
+      color: var(--muted2);
+      line-height: 1.6;
+      word-break: break-all;
+      white-space: pre-wrap;
+    }
+
+    .log-line.status-line {
+      color: var(--warn);
+    }
+
+    #log-placeholder {
+      color: var(--muted);
+      font-size: 11px;
+      padding: 4px 0;
+    }
+
+    /* ── Right panel ── */
+    #right {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px 24px;
+    }
+
+    #right::-webkit-scrollbar { width: 4px; }
+    #right::-webkit-scrollbar-track { background: transparent; }
+    #right::-webkit-scrollbar-thumb { background: var(--border); }
+
+    #results-placeholder {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .summary {
+      font-size: 12px;
+      color: var(--muted2);
+      margin-bottom: 16px;
+      border-left: 2px solid var(--accent-dim);
+      padding-left: 10px;
+    }
+    .summary strong { color: var(--accent); }
+
+    .no-results { color: var(--muted2); font-size: 13px; }
+
+    .result-card {
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      padding: 14px 16px;
+      margin-bottom: 10px;
+    }
+
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+
+    .card-title a {
+      color: var(--text);
+      text-decoration: none;
+      font-size: 13px;
+    }
+    .card-title a:hover { color: var(--accent); }
+
+    .card-meta { color: var(--muted2); font-size: 11px; white-space: nowrap; }
+
+    .matched-term {
+      display: inline-block;
+      background: var(--accent-dim);
+      color: var(--accent);
+      font-size: 10px;
+      padding: 2px 6px;
+      margin-bottom: 8px;
+      letter-spacing: 0.05em;
+    }
+
+    .context-snippet {
+      font-size: 12px;
+      color: #999;
+      line-height: 1.7;
+      border-left: 2px solid var(--border);
+      padding-left: 10px;
+      margin-bottom: 8px;
+    }
+    .context-snippet mark {
+      background: var(--match);
+      color: #111;
+      padding: 0 2px;
+    }
+
+    .llm-verdict {
+      font-size: 11px;
+      color: var(--muted2);
+      border-top: 1px solid var(--border);
+      padding-top: 6px;
+      margin-top: 6px;
+    }
+    .llm-verdict span { color: var(--warn); }
+
+    .error-msg {
+      color: var(--error);
+      background: var(--bg3);
+      border: 1px solid #3a1a1a;
+      padding: 10px 14px;
+      font-size: 12px;
+    }
+
+    .progress-bar-wrap {
+      height: 3px;
+      background: var(--border);
+    }
+    .progress-bar {
+      height: 100%;
+      background: var(--accent-dim);
+      transition: width 0.4s;
+      width: 0%;
+    }
+  </style>
+</head>
+<body>
+
+<div id="topbar">
+  <h1>// youtube transcript search</h1>
+</div>
+
+<div id="layout">
+
+  <!-- LEFT: form + logs -->
+  <div id="left">
+    <div id="form-area">
+
+      <div class="fg">
+        <label class="lbl">Channel or Video URL</label>
+        <input type="text" id="channel-url" placeholder="https://www.youtube.com/@Channel" oninput="onUrlInput(this.value)" />
+      </div>
+
+      <div class="fg">
+        <label class="lbl">Person Name</label>
+        <input type="text" id="person-name" placeholder="First Last" />
+      </div>
+
+      <div class="fg" id="max-videos-group">
+        <label class="lbl">Max videos</label>
+        <div class="row">
+          <input type="text" id="sample-size" placeholder="blank = all" />
+          <label class="chk-label">
+            <input type="checkbox" id="random-sample" /> random
+          </label>
+        </div>
+      </div>
+
+      <div class="fg">
+        <button type="button" class="toggle-btn" id="toggle-extra">+ additional terms</button>
+        <div id="extra-terms-wrap" style="display:none;">
+          <textarea id="extra-terms" placeholder="One per line"></textarea>
+        </div>
+      </div>
+
+      <div id="btn-row">
+        <button class="search-btn" id="submit-btn" onclick="startSearch()">Search</button>
+        <button class="stop-btn" id="stop-btn" onclick="stopSearch()">stop</button>
+      </div>
+
+    </div>
+
+    <!-- Download progress -->
+    <div style="display:flex;align-items:center;gap:8px;padding:5px 14px 0;flex-shrink:0;">
+      <span style="font-size:10px;color:var(--muted);white-space:nowrap;width:60px;">download</span>
+      <div class="progress-bar-wrap" style="flex:1;margin:0;"><div class="progress-bar" id="progress-dl"></div></div>
+      <span style="font-size:10px;color:var(--muted);width:36px;text-align:right;" id="pct-dl">0%</span>
+    </div>
+    <!-- Search progress -->
+    <div style="display:flex;align-items:center;gap:8px;padding:4px 14px 6px;flex-shrink:0;">
+      <span style="font-size:10px;color:var(--muted);white-space:nowrap;width:60px;">searched</span>
+      <div class="progress-bar-wrap" style="flex:1;margin:0;background:#1a2a1f;"><div class="progress-bar" id="progress-search" style="background:#2d6b50;"></div></div>
+      <span style="font-size:10px;color:var(--muted);width:36px;text-align:right;" id="pct-search">0%</span>
+    </div>
+
+    <!-- Log output -->
+    <div id="log-area">
+      <div id="log-placeholder">// logs will appear here</div>
+    </div>
+  </div>
+
+  <!-- RIGHT: results -->
+  <div id="right">
+    <div id="results-placeholder">// results will appear here</div>
+  </div>
+
+</div>
+
+<script>
+
+  document.getElementById('toggle-extra').addEventListener('click', function () {
+    const wrap = document.getElementById('extra-terms-wrap');
+    const hidden = wrap.style.display === 'none';
+    wrap.style.display = hidden ? 'block' : 'none';
+    this.textContent = hidden ? '− additional terms' : '+ additional terms';
+  });
+
+  function isVideoUrl(url) {
+    return /watch\?v=|youtu\.be\//.test(url);
+  }
+
+  function onUrlInput(val) {
+    document.getElementById('max-videos-group').style.display =
+      isVideoUrl(val) ? 'none' : '';
+  }
+
+  let pollTimer = null;
+  let lastLogCount = 0;
+  let lastResultCount = 0;
+
+  async function startSearch() {
+    const channelUrl = document.getElementById('channel-url').value.trim();
+    const name = document.getElementById('person-name').value.trim();
+    if (!channelUrl || !name) return;
+
+    const sampleRaw = document.getElementById('sample-size').value.trim();
+    const sampleSize = sampleRaw && /^\d+$/.test(sampleRaw) ? parseInt(sampleRaw, 10) : null;
+    const randomSample = document.getElementById('random-sample').checked;
+    const extraTerms = document.getElementById('extra-terms').value
+      .split('\n').map(s => s.trim()).filter(Boolean);
+
+    clearLogs();
+    clearResults();
+    setButtons(true);
+
+    try {
+      const res = await fetch('/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          channel_url: channelUrl, name,
+          extra_terms: extraTerms,
+          sample_size: sampleSize, random_sample: randomSample,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        appendLog('Error: ' + (data.error || 'failed to start'), true);
+        setButtons(false);
+        return;
+      }
+    } catch (err) {
+      appendLog('Error: ' + err.message, true);
+      setButtons(false);
+      return;
+    }
+
+    lastLogCount = 0;
+    lastResultCount = 0;
+    pollTimer = setInterval(pollStatus, 1500);
+  }
+
+  async function stopSearch() {
+    document.getElementById('stop-btn').disabled = true;
+    await fetch('/cancel', { method: 'POST' });
+  }
+
+  async function pollStatus() {
+    try {
+      const res = await fetch('/status');
+      const data = await res.json();
+
+      // Append new log lines (also handle in-place updates of the last line)
+      const lines = data.log_lines || [];
+      if (lines.length === lastLogCount && lines.length > 0) {
+        // Last line may have been updated in-place (stub → result)
+        const area = document.getElementById('log-area');
+        const divs = area.querySelectorAll('.log-line');
+        if (divs.length > 0) {
+          const last = lines[lines.length - 1];
+          const isStub = last.startsWith('\u29d7');
+          const display = isStub ? last.slice(1) : last;
+          divs[divs.length - 1].style.color = isStub ? 'var(--muted2)' : '';
+          divs[divs.length - 1].innerHTML = linkify(escHtml(display));
+        }
+      } else {
+        for (let i = lastLogCount; i < lines.length; i++) appendLog(lines[i]);
+        lastLogCount = lines.length;
+      }
+
+      // Dual progress bars
+      const dlPct  = data.videos_total > 0 ? Math.round(data.videos_done / data.videos_total * 100) : 0;
+      const srPct  = data.videos_total > 0 ? Math.round(data.total_videos_searched / data.videos_total * 100) : 0;
+      setProgress(dlPct, srPct);
+
+      // Append new result cards incrementally
+      const results = data.results || [];
+      if (results.length > lastResultCount) {
+        appendResultCards(results.slice(lastResultCount), data.total_matches, data.total_videos_searched);
+        lastResultCount = results.length;
+      }
+      updateSummary(data.total_matches, data.total_videos_searched);
+
+      if (data.stage === 'done') {
+        clearInterval(pollTimer);
+        setProgress(100, 100);
+        setButtons(false);
+      } else if (data.stage === 'cancelled') {
+        clearInterval(pollTimer);
+        setButtons(false);
+        appendLog('// cancelled', false);
+      } else if (data.stage === 'error') {
+        clearInterval(pollTimer);
+        setButtons(false);
+        appendLog('Error: ' + data.message, true);
+      }
+    } catch (_) {}
+  }
+
+  function setProgress(dlPct, srPct) {
+    document.getElementById('progress-dl').style.width = dlPct + '%';
+    document.getElementById('pct-dl').textContent = dlPct + '%';
+    document.getElementById('progress-search').style.width = srPct + '%';
+    document.getElementById('pct-search').textContent = srPct + '%';
+  }
+
+  let lastStatusLine = '';
+  function appendStatusLine(msg) {
+    if (msg === lastStatusLine) return;
+    lastStatusLine = msg;
+    appendLog('> ' + msg, false, true);
+  }
+
+  function appendLog(text, isError = false, isStatus = false) {
+    const el = document.getElementById('log-placeholder');
+    if (el) el.remove();
+    const area = document.getElementById('log-area');
+    const div = document.createElement('div');
+    div.className = 'log-line' + (isStatus ? ' status-line' : '');
+    if (isError) div.style.color = 'var(--error)';
+    const isStub = text.startsWith('\u29d7');
+    const display = isStub ? text.slice(1) : text;
+    if (isStub) div.style.color = 'var(--muted2)';
+    div.innerHTML = linkify(escHtml(display));
+    area.appendChild(div);
+    area.scrollTop = area.scrollHeight;
+  }
+
+  function linkify(html) {
+    return html.replace(/(https?:\/\/[^\s]+)/g, '<a href="$1" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none;">$1</a>');
+  }
+
+  function clearLogs() {
+    document.getElementById('log-area').innerHTML =
+      '<div id="log-placeholder">// logs will appear here</div>';
+    lastLogCount = 0;
+    lastStatusLine = '';
+    setProgress(0, 0);
+  }
+
+  function clearResults() {
+    document.getElementById('right').innerHTML =
+      '<div id="summary-line"></div><div id="results-list"></div>';
+    lastResultCount = 0;
+  }
+
+  function updateSummary(matches, searched) {
+    const el = document.getElementById('summary-line');
+    if (!el) return;
+    if (searched === 0 && matches === 0) { el.innerHTML = ''; return; }
+    el.className = 'summary';
+    el.innerHTML = `Found <strong>${matches}</strong> match${matches !== 1 ? 'es' : ''} across <strong>${searched}</strong> video${searched !== 1 ? 's' : ''} searched so far.`;
+  }
+
+  function appendResultCards(newResults, totalMatches, totalSearched) {
+    const list = document.getElementById('results-list');
+    if (!list) return;
+    // Remove placeholder if present
+    const ph = document.getElementById('results-placeholder');
+    if (ph) ph.remove();
+
+    newResults.forEach(r => {
+      const date = r.upload_date && r.upload_date !== 'unknown'
+        ? `${r.upload_date.slice(0,4)}-${r.upload_date.slice(4,6)}-${r.upload_date.slice(6,8)}`
+        : '';
+      const baseUrl = `https://youtube.com/watch?v=${escHtml(r.video_id)}`;
+      const videoUrl = r.match_timestamp ? baseUrl + `&t=${r.match_timestamp}s` : baseUrl;
+      const tsLabel = r.match_timestamp ? fmtTime(r.match_timestamp) : '';
+      const highlighted = highlightMatch(r.context, r.matched_term);
+      const llm = r.llm_verdict
+        ? `<div class="llm-verdict">LLM: <span>${escHtml(r.llm_verdict)}</span></div>` : '';
+      const card = document.createElement('div');
+      card.className = 'result-card';
+      card.innerHTML = `
+        <div class="card-header">
+          <div class="card-title"><a href="${videoUrl}" target="_blank" rel="noopener">${escHtml(r.video_title)}</a></div>
+          <div class="card-meta">${date}${tsLabel ? ' &nbsp;@&nbsp;' + tsLabel : ''}</div>
+        </div>
+        <div class="matched-term">${escHtml(r.matched_term)}</div>
+        <div class="context-snippet">${highlighted}</div>
+        ${llm}`;
+      list.appendChild(card);
+    });
+  }
+
+  function setButtons(running) {
+    document.getElementById('submit-btn').disabled = running;
+    document.getElementById('stop-btn').style.display = running ? 'inline-block' : 'none';
+    document.getElementById('stop-btn').disabled = false;
+  }
+
+  function highlightMatch(context, term) {
+    const escaped = escHtml(context);
+    const re = new RegExp(`(${escRegex(escHtml(term))})`, 'gi');
+    return escaped.replace(re, '<mark>$1</mark>');
+  }
+
+  function fmtTime(secs) {
+    const h = Math.floor(secs / 3600);
+    const m = Math.floor((secs % 3600) / 60);
+    const s = secs % 60;
+    if (h > 0) return `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+    return `${m}:${String(s).padStart(2,'0')}`;
+  }
+
+  function escHtml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function escRegex(str) {
+    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+</script>
+</body>
+</html>
