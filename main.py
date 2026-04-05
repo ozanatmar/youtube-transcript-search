@@ -21,7 +21,7 @@ load_dotenv()
 # --- Configuration ---
 TRANSCRIPTS_DIR = "./transcripts"
 RESULTS_DIR = "./results"
-LLM_MODEL = "claude-sonnet-4-20250514"
+LLM_MODEL = "gpt-4o-mini"
 LLM_ENABLED = True
 
 app = FastAPI()
@@ -176,11 +176,11 @@ def extract_context(text: str, match_start: int, match_end: int, window: int = 2
 # --- LLM ---
 
 def generate_report(matches: list[dict], target_name: str) -> str:
-    api_key = os.getenv("ANTHROPIC_API_KEY")
+    api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
         return "No API key configured — report unavailable."
     try:
-        import anthropic
+        from openai import OpenAI
         lines = []
         for i, m in enumerate(matches[:150]):
             ts = fmttime(m["match_timestamp"]) if m.get("match_timestamp") else "?"
@@ -200,33 +200,33 @@ def generate_report(matches: list[dict], target_name: str) -> str:
             f"3. Coincidental — different person or common word\n\n"
             f"For each confirmed or ambiguous match include the timestamp URL. Be direct and concise."
         )
-        client = anthropic.Anthropic(api_key=api_key)
-        msg = client.messages.create(
+        client = OpenAI(api_key=api_key)
+        msg = client.chat.completions.create(
             model=LLM_MODEL, max_tokens=2000,
             messages=[{"role": "user", "content": prompt}],
         )
-        return msg.content[0].text.strip()
+        return msg.choices[0].message.content.strip()
     except Exception as e:
         return f"Report generation failed: {e}"
 
 
 def llm_verify(context: str, matched_term: str, target_name: str) -> tuple[str, str]:
-    api_key = os.getenv("ANTHROPIC_API_KEY")
+    api_key = os.getenv("OPENAI_API_KEY")
     if not api_key or not LLM_ENABLED:
         return "skipped - no API key", "unknown"
     try:
-        import anthropic
-        client = anthropic.Anthropic(api_key=api_key)
+        from openai import OpenAI
+        client = OpenAI(api_key=api_key)
         prompt = (
             f'In the following transcript snippet, the word "{matched_term}" appears. '
             f'Is this referring to the person named "{target_name}"? '
             f'Reply with YES or NO and a short reason.\n\nSnippet: {context}'
         )
-        message = client.messages.create(
+        msg = client.chat.completions.create(
             model=LLM_MODEL, max_tokens=150,
             messages=[{"role": "user", "content": prompt}],
         )
-        reply = message.content[0].text.strip()
+        reply = msg.choices[0].message.content.strip()
         return reply, "high" if reply.upper().startswith("YES") else "low"
     except Exception as e:
         return f"skipped - error: {e}", "unknown"
