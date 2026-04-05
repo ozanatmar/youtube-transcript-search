@@ -364,6 +364,12 @@
       <span style="font-size:10px;color:var(--muted);width:36px;text-align:right;" id="pct-search">0%</span>
     </div>
 
+    <!-- Search terms -->
+    <div id="terms-area" style="display:none;padding:6px 14px;border-bottom:1px solid var(--border);flex-shrink:0;">
+      <div style="font-size:10px;color:var(--muted);margin-bottom:4px;">searching for:</div>
+      <div id="terms-list" style="display:flex;flex-wrap:wrap;gap:4px;"></div>
+    </div>
+
     <!-- Log output -->
     <div id="log-area">
       <div id="log-placeholder">// logs will appear here</div>
@@ -469,6 +475,17 @@
         lastLogCount = lines.length;
       }
 
+      // Search terms
+      const terms = data.terms || [];
+      if (terms.length > 0) {
+        const area = document.getElementById('terms-area');
+        const list = document.getElementById('terms-list');
+        area.style.display = '';
+        list.innerHTML = terms.map(t =>
+          `<span style="background:var(--bg3);border:1px solid var(--border);border-radius:3px;padding:1px 6px;font-size:11px;color:var(--muted2);">${escHtml(t)}</span>`
+        ).join('');
+      }
+
       // Dual progress bars
       const dlPct  = data.videos_total > 0 ? Math.round(data.videos_done / data.videos_total * 100) : 0;
       const srPct  = data.videos_total > 0 ? Math.round(data.total_videos_searched / data.videos_total * 100) : 0;
@@ -534,6 +551,8 @@
   function clearLogs() {
     document.getElementById('log-area').innerHTML =
       '<div id="log-placeholder">// logs will appear here</div>';
+    document.getElementById('terms-area').style.display = 'none';
+    document.getElementById('terms-list').innerHTML = '';
     lastLogCount = 0;
     lastStatusLine = '';
     setProgress(0, 0);

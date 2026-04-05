@@ -35,6 +35,7 @@ status: dict = {
     "results": [],
     "total_matches": 0,
     "total_videos_searched": 0,
+    "terms": [],
 }
 
 current_proc: Optional[subprocess.Popen] = None
@@ -548,6 +549,7 @@ def run_search(
         terms = list(dict.fromkeys(
             expand_name(name) + [t.lower() for t in extra_terms if t.strip()]
         ))
+        status["terms"] = sorted(terms)
 
         stream_download_and_search(channel_url, out_dir, terms, name, sample_size, random_sample)
 
@@ -607,7 +609,7 @@ async def search(req: SearchRequest, background_tasks: BackgroundTasks):
         "stage": "starting",
         "videos_done": 0, "videos_total": 0,
         "message": "Initializing...",
-        "log_lines": [], "results": [],
+        "log_lines": [], "results": [], "terms": [],
         "total_matches": 0, "total_videos_searched": 0,
         "result": None,
     })
