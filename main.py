@@ -202,7 +202,7 @@ def generate_report(matches: list[dict], target_name: str) -> str:
         )
         client = OpenAI(api_key=api_key)
         msg = client.chat.completions.create(
-            model=LLM_MODEL, max_completion_tokens=2000,
+            model=LLM_MODEL,
             messages=[{"role": "user", "content": prompt}],
         )
         return msg.choices[0].message.content.strip()
@@ -223,7 +223,7 @@ def llm_verify(context: str, matched_term: str, target_name: str) -> tuple[str, 
             f'Reply with YES or NO and a short reason.\n\nSnippet: {context}'
         )
         msg = client.chat.completions.create(
-            model=LLM_MODEL, max_completion_tokens=150,
+            model=LLM_MODEL,
             messages=[{"role": "user", "content": prompt}],
         )
         reply = msg.choices[0].message.content.strip()
