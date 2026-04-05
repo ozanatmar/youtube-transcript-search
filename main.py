@@ -238,38 +238,49 @@ def search_vtt(vtt_path: Path, terms: list[str], target_name: str) -> list[dict]
     video_title = fm.group(3).replace("_", " ") if fm else stem
 
     single_word_terms = {t for t in terms if " " not in t}
+    seen_positions: set[int] = set()
     results = []
 
     for term in terms:
-        pos = full_lower.find(term.lower())
-        if pos == -1:
-            continue
-
-        # Resolve timestamp of matching cue
-        match_ts = 0
-        for s, e, ts in cue_map:
-            if s <= pos < e:
-                match_ts = int(ts)
-                break
-
-        context = extract_context(full_text, pos, pos + len(term))
+        term_lower = term.lower()
+        term_len = len(term)
         llm_verdict, confidence = None, None
-        if term in single_word_terms and len(target_name.split()) >= 2:
-            llm_verdict, confidence = llm_verify(context, term, target_name)
-            if llm_verdict.upper().startswith("NO"):
+        llm_checked = False
+
+        pos = full_lower.find(term_lower)
+        while pos != -1:
+            if pos in seen_positions:
+                pos = full_lower.find(term_lower, pos + 1)
                 continue
 
-        results.append({
-            "video_id": video_id,
-            "video_title": video_title,
-            "upload_date": upload_date,
-            "match_timestamp": match_ts,
-            "matched_term": term,
-            "context": context,
-            "llm_verdict": llm_verdict,
-            "confidence": confidence,
-        })
-        break  # one match per file
+            # LLM verification on first occurrence only
+            if not llm_checked and term in single_word_terms and len(target_name.split()) >= 2:
+                context = extract_context(full_text, pos, pos + term_len)
+                llm_verdict, confidence = llm_verify(context, term, target_name)
+                llm_checked = True
+                if llm_verdict.upper().startswith("NO"):
+                    break  # skip all occurrences of this term
+
+            match_ts = 0
+            for s, e, ts in cue_map:
+                if s <= pos < e:
+                    match_ts = int(ts)
+                    break
+
+            seen_positions.add(pos)
+            context = extract_context(full_text, pos, pos + term_len)
+            results.append({
+                "video_id": video_id,
+                "video_title": video_title,
+                "upload_date": upload_date,
+                "match_timestamp": match_ts,
+                "matched_term": term,
+                "context": context,
+                "llm_verdict": llm_verdict,
+                "confidence": confidence,
+            })
+
+            pos = full_lower.find(term_lower, pos + term_len)
 
     return results
 
@@ -417,11 +428,13 @@ def stream_download_and_search(
             n = current_item
             p = prefix(n, current_total)
             if matches:
-                terms_hit = ", ".join(m["matched_term"] for m in matches)
+                unique_terms = list(dict.fromkeys(m["matched_term"] for m in matches))
+                terms_hit = ", ".join(unique_terms)
                 ts = matches[0].get("match_timestamp", 0)
                 ts_str = f" @ {fmttime(ts)}" if ts else ""
+                count_str = f" ({len(matches)}×)" if len(matches) > 1 else ""
                 url = yt_url(vid_id, ts)
-                log_or_replace(f"{p}[{title}] — found: {terms_hit}{ts_str}  {url}")
+                log_or_replace(f"{p}[{title}] — found: {terms_hit}{ts_str}{count_str}  {url}")
             else:
                 url = yt_url(vid_id)
                 log_or_replace(f"{p}[{title}] — no match  {url}")
@@ -491,11 +504,13 @@ def stream_download_and_search(
             n = current_item
             p = prefix(n, current_total)
             if matches:
-                terms_hit = ", ".join(mx["matched_term"] for mx in matches)
+                unique_terms = list(dict.fromkeys(mx["matched_term"] for mx in matches))
+                terms_hit = ", ".join(unique_terms)
                 ts = matches[0].get("match_timestamp", 0)
                 ts_str = f" @ {fmttime(ts)}" if ts else ""
+                count_str = f" ({len(matches)}×)" if len(matches) > 1 else ""
                 url = yt_url(vid_id, ts)
-                new_line = f"{p}[{title}] — found: {terms_hit}{ts_str}  {url}"
+                new_line = f"{p}[{title}] — found: {terms_hit}{ts_str}{count_str}  {url}"
             else:
                 url = yt_url(vid_id)
                 new_line = f"{p}[{title}] — no match  {url}"
