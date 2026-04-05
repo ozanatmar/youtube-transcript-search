@@ -46,25 +46,12 @@ search_running: bool = False
 
 # --- Name expansion ---
 
-def misspellings(word: str) -> list[str]:
-    vowels = "aeiou"
-    variants = set()
-    for i, ch in enumerate(word):
-        if ch in vowels:
-            variants.add(word[:i] + word[i+1:])
-    for i, ch in enumerate(word[:-1]):
-        if ch in vowels:
-            for v in [v for v in vowels if v != ch][:2]:
-                variants.add(word[:i] + v + word[i+1:])
-    return [v for v in variants if v and v != word]
-
-
 def expand_name(name: str) -> list[str]:
     # Strip dots so "R." → "r", "O." → "o"
     parts = [p.lower().strip(".") for p in name.strip().split() if p.strip(".")]
     variants = set()
 
-    if len(parts) == 0:
+    if not parts:
         return []
 
     if len(parts) == 1:
@@ -72,47 +59,41 @@ def expand_name(name: str) -> list[str]:
 
     elif len(parts) == 2:
         first, last = parts
-        variants.update([
-            f"{first} {last}", f"{first}{last}",
-            f"{first[0]} {last}", f"{first[0]}{last}",
-            last, first,
-        ])
-        for ms in misspellings(first):
-            variants.update([ms, f"{ms} {last}", f"{ms}{last}"])
-        for ms in misspellings(last):
-            variants.update([ms, f"{first} {ms}", f"{first}{ms}"])
+        variants.update([last, first, f"{first} {last}"])
+        if len(first) > 1:
+            variants.update([f"{first[0]} {last}", f"{first[0]}{last}"])
 
     else:  # 3+ parts
         first, last = parts[0], parts[-1]
-        middles = parts[1:-1]
+        mid = parts[1]  # primary middle name/initial
 
-        # Full name and subsets
-        variants.add(" ".join(parts))
-        variants.update([f"{first} {last}", last, first])
-        for mid in middles:
-            variants.update([mid, f"{mid} {last}", f"{first} {mid} {last}"])
+        variants.update([
+            " ".join(parts),          # rasim ozan atmar
+            f"{first} {last}",        # rasim atmar
+            f"{mid} {last}",          # ozan atmar
+            last,                     # atmar
+            first,                    # rasim
+            mid,                      # ozan
+        ])
 
-        # Initial forms
+        fi, mi = first[0], mid[0]
+
         # First initial + last
-        variants.update([f"{first[0]} {last}", f"{first[0]}{last}"])
-        # Middle initial(s) + last
-        for mid in middles:
-            variants.update([f"{mid[0]} {last}", f"{mid[0]}{last}"])
-        # First initial + middles + last
-        mid_str = " ".join(middles)
-        variants.add(f"{first[0]} {mid_str} {last}")
-        # First + middle initials + last
-        mid_inits = " ".join(m[0] for m in middles)
-        variants.add(f"{first} {mid_inits} {last}")
+        if len(first) > 1:
+            variants.update([f"{fi} {last}", f"{fi}{last}"])
 
-        # Misspellings of first, last, and each middle
-        for ms in misspellings(first):
-            variants.update([ms, f"{ms} {last}", f"{ms} {mid_str} {last}"])
-        for ms in misspellings(last):
-            variants.update([ms, f"{first} {ms}", f"{first} {mid_str} {ms}"])
-        for mid in middles:
-            for ms in misspellings(mid):
-                variants.update([ms, f"{ms} {last}", f"{first} {ms} {last}"])
+        # Combined initials + last (ro atmar, roatmar, r o atmar)
+        variants.update([
+            f"{fi}{mi} {last}",       # ro atmar
+            f"{fi}{mi}{last}",        # roatmar
+            f"{fi} {mi} {last}",      # r o atmar
+            f"{fi} {mid} {last}",     # r ozan atmar
+            f"{first} {mi} {last}",   # rasim o atmar
+        ])
+
+        # Any extra middle parts (4+ word names)
+        for extra in parts[2:-1]:
+            variants.update([extra, f"{extra} {last}", f"{first} {extra} {last}"])
 
     return [v for v in variants if len(v) > 1]
 
