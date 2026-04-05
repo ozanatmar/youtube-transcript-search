@@ -364,7 +364,6 @@ def stream_download_and_search(
         sys.executable, "-m", "yt_dlp",
         "--skip-download", "--write-sub", "--write-auto-sub",
         "--sub-lang", "en", "--convert-subs", "vtt",
-        "--extractor-args", "youtube:player_client=web",
         "--ignore-no-formats-error",
         "--output", str(out_dir / "%(upload_date)s_%(id)s_%(title)s.%(ext)s"),
         "--no-warnings", "--ignore-errors",
