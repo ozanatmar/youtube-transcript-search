@@ -21,7 +21,7 @@ load_dotenv()
 # --- Configuration ---
 TRANSCRIPTS_DIR = "./transcripts"
 RESULTS_DIR = "./results"
-LLM_MODEL = "gpt-4o-mini"
+LLM_MODEL = "gpt-5.4-mini"
 LLM_ENABLED = True
 
 app = FastAPI()
