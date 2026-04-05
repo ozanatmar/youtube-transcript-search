@@ -659,8 +659,10 @@
         det.addEventListener('toggle', () => groupOpenState.set(vid, det.open));
 
         const sum = document.createElement('summary');
+        const num = g.matches[0]?.item_number;
+        const numLabel = num ? `<span style="color:var(--muted);margin-right:6px;">#${num}</span>` : '';
         sum.innerHTML = `
-          <div class="group-title"><a href="${baseUrl}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${escHtml(g.video_title)}</a></div>
+          <div class="group-title">${numLabel}<a href="${baseUrl}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${escHtml(g.video_title)}</a></div>
           <div class="group-meta">${date ? date + ' · ' : ''}<span class="group-count">${count} match${count !== 1 ? 'es' : ''}</span></div>`;
         det.appendChild(sum);
         for (const m of g.matches) det.appendChild(makeMatchCard(m));

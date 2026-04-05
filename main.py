@@ -315,11 +315,13 @@ def _vtt_title(vtt_path: Path) -> str:
     return m.group(3).replace("_", " ") if m else stem
 
 
-def _flush_vtt(vtt_path: Path, terms: list[str], target_name: str) -> list[dict]:
+def _flush_vtt(vtt_path: Path, terms: list[str], target_name: str, item_number: int = 0) -> list[dict]:
     """Search a completed VTT file, push results into status, return matches."""
     matches = search_vtt(vtt_path, terms, target_name)
     status["total_videos_searched"] += 1
     if matches:
+        for m in matches:
+            m["item_number"] = item_number
         status["results"].extend(matches)
         status["total_matches"] = len(status["results"])
     return matches
@@ -424,7 +426,7 @@ def stream_download_and_search(
         nonlocal current_vtt, has_transcript
         if current_vtt:
             vid_id = current_video_id
-            matches = _flush_vtt(current_vtt, terms, target_name)
+            matches = _flush_vtt(current_vtt, terms, target_name, current_item)
             title = _vtt_title(current_vtt)
             n = current_item
             p = prefix(n, current_total)
@@ -500,7 +502,7 @@ def stream_download_and_search(
         # 100% done — flush immediately (fast path)
         if current_vtt and DONE_LINE.search(line):
             vid_id = current_video_id
-            matches = _flush_vtt(current_vtt, terms, target_name)
+            matches = _flush_vtt(current_vtt, terms, target_name, current_item)
             title = _vtt_title(current_vtt)
             n = current_item
             p = prefix(n, current_total)
@@ -522,6 +524,14 @@ def stream_download_and_search(
         # Surface [info] lines that explain why subtitles are unavailable
         if line.startswith("[info]") and ("subtitle" in line.lower() or "caption" in line.lower()):
             log(f"yt-dlp: {line[7:].strip()}")
+            continue
+
+        # Stop on any yt-dlp error
+        if line.startswith("ERROR:"):
+            log(f"error: {line[7:].strip()}")
+            status.update({"stage": "error", "message": line[7:].strip()})
+            proc.kill()
+            break
 
     proc.wait()
     current_proc = None
@@ -553,6 +563,8 @@ def run_search(
 
         stream_download_and_search(channel_url, out_dir, terms, name, sample_size, random_sample)
 
+        if status.get("stage") == "error":
+            return
         if cancel_requested:
             status.update({"stage": "cancelled", "message": "Search cancelled."})
             return
