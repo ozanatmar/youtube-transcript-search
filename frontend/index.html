@@ -229,26 +229,51 @@
 
     .no-results { color: var(--muted2); font-size: 13px; }
 
-    .result-card {
-      background: var(--bg3);
+    .result-group {
       border: 1px solid var(--border);
-      padding: 14px 16px;
-      margin-bottom: 10px;
+      margin-bottom: 8px;
+    }
+
+    .result-group summary {
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+      padding: 10px 14px;
+      cursor: pointer;
+      background: var(--bg3);
+      list-style: none;
+      user-select: none;
+    }
+    .result-group summary::-webkit-details-marker { display: none; }
+    .result-group summary::before {
+      content: '▶';
+      font-size: 9px;
+      color: var(--muted);
+      flex-shrink: 0;
+      transition: transform 0.15s;
+    }
+    .result-group[open] summary::before { content: '▼'; }
+
+    .group-title a {
+      color: var(--text);
+      text-decoration: none;
+      font-size: 13px;
+    }
+    .group-title a:hover { color: var(--accent); }
+
+    .group-meta { color: var(--muted2); font-size: 11px; margin-left: auto; white-space: nowrap; }
+
+    .result-card {
+      border-top: 1px solid var(--border);
+      padding: 12px 14px;
     }
 
     .card-header {
       display: flex;
       justify-content: space-between;
       gap: 10px;
-      margin-bottom: 8px;
+      margin-bottom: 6px;
     }
-
-    .card-title a {
-      color: var(--text);
-      text-decoration: none;
-      font-size: 13px;
-    }
-    .card-title a:hover { color: var(--accent); }
 
     .card-meta { color: var(--muted2); font-size: 11px; white-space: nowrap; }
 
@@ -378,6 +403,7 @@
 
   <!-- RIGHT: results -->
   <div id="right">
+    <div id="summary-line"></div>
     <div id="results-placeholder">// results will appear here</div>
   </div>
 
@@ -491,10 +517,10 @@
       const srPct  = data.videos_total > 0 ? Math.round(data.total_videos_searched / data.videos_total * 100) : 0;
       setProgress(dlPct, srPct);
 
-      // Append new result cards incrementally
+      // Re-render grouped results when new ones arrive
       const results = data.results || [];
-      if (results.length > lastResultCount) {
-        appendResultCards(results.slice(lastResultCount), data.total_matches, data.total_videos_searched);
+      if (results.length !== lastResultCount) {
+        renderGroupedResults(results);
         lastResultCount = results.length;
       }
       updateSummary(data.total_matches, data.total_videos_searched);
@@ -559,9 +585,19 @@
   }
 
   function clearResults() {
-    document.getElementById('right').innerHTML =
-      '<div id="summary-line"></div><div id="results-list"></div>';
+    document.getElementById('summary-line').innerHTML = '';
+    const right = document.getElementById('right');
+    // Remove all groups, keep summary-line and placeholder
+    right.querySelectorAll('details').forEach(d => d.remove());
+    const ph = document.getElementById('results-placeholder');
+    if (!ph) {
+      const p = document.createElement('div');
+      p.id = 'results-placeholder';
+      p.textContent = '// results will appear here';
+      right.appendChild(p);
+    }
     lastResultCount = 0;
+    groupOpenState.clear();
   }
 
   function updateSummary(matches, searched) {
@@ -572,35 +608,83 @@
     el.innerHTML = `Found <strong>${matches}</strong> match${matches !== 1 ? 'es' : ''} across <strong>${searched}</strong> video${searched !== 1 ? 's' : ''} searched so far.`;
   }
 
-  function appendResultCards(newResults, totalMatches, totalSearched) {
-    const list = document.getElementById('results-list');
-    if (!list) return;
-    // Remove placeholder if present
+  const groupOpenState = new Map(); // video_id → bool
+
+  function renderGroupedResults(results) {
+    const right = document.getElementById('right');
     const ph = document.getElementById('results-placeholder');
     if (ph) ph.remove();
 
-    newResults.forEach(r => {
-      const date = r.upload_date && r.upload_date !== 'unknown'
-        ? `${r.upload_date.slice(0,4)}-${r.upload_date.slice(4,6)}-${r.upload_date.slice(6,8)}`
-        : '';
-      const baseUrl = `https://youtube.com/watch?v=${escHtml(r.video_id)}`;
-      const videoUrl = r.match_timestamp ? baseUrl + `&t=${r.match_timestamp}s` : baseUrl;
-      const tsLabel = r.match_timestamp ? fmtTime(r.match_timestamp) : '';
-      const highlighted = highlightMatch(r.context, r.matched_term);
-      const llm = r.llm_verdict
-        ? `<div class="llm-verdict">LLM: <span>${escHtml(r.llm_verdict)}</span></div>` : '';
-      const card = document.createElement('div');
-      card.className = 'result-card';
-      card.innerHTML = `
-        <div class="card-header">
-          <div class="card-title"><a href="${videoUrl}" target="_blank" rel="noopener">${escHtml(r.video_title)}</a></div>
-          <div class="card-meta">${date}${tsLabel ? ' &nbsp;@&nbsp;' + tsLabel : ''}</div>
-        </div>
+    // Group by video_id
+    const groups = new Map();
+    for (const r of results) {
+      if (!groups.has(r.video_id)) {
+        groups.set(r.video_id, { video_title: r.video_title, upload_date: r.upload_date, matches: [] });
+      }
+      groups.get(r.video_id).matches.push(r);
+    }
+
+    // Sort matches within each group by timestamp
+    for (const g of groups.values()) {
+      g.matches.sort((a, b) => a.match_timestamp - b.match_timestamp);
+    }
+
+    // Preserve open/closed state, default open
+    const existingDetails = right.querySelectorAll('details[data-vid]');
+    existingDetails.forEach(d => groupOpenState.set(d.dataset.vid, d.open));
+
+    // Re-render
+    const existing = new Set(Array.from(right.querySelectorAll('details[data-vid]')).map(d => d.dataset.vid));
+    for (const [vid, g] of groups) {
+      const date = g.upload_date && g.upload_date !== 'unknown'
+        ? `${g.upload_date.slice(0,4)}-${g.upload_date.slice(4,6)}-${g.upload_date.slice(6,8)}` : '';
+      const baseUrl = `https://youtube.com/watch?v=${vid}`;
+      const count = g.matches.length;
+
+      if (existing.has(vid)) {
+        // Update match count in existing group
+        const det = right.querySelector(`details[data-vid="${vid}"]`);
+        det.querySelector('.group-count').textContent = `${count} match${count !== 1 ? 'es' : ''}`;
+        // Add any new match cards (already sorted, just append missing ones)
+        const existingCards = det.querySelectorAll('.result-card').length;
+        for (let i = existingCards; i < g.matches.length; i++) {
+          det.appendChild(makeMatchCard(g.matches[i]));
+        }
+      } else {
+        // Create new group
+        const det = document.createElement('details');
+        det.className = 'result-group';
+        det.dataset.vid = vid;
+        det.open = groupOpenState.get(vid) !== false;
+        det.addEventListener('toggle', () => groupOpenState.set(vid, det.open));
+
+        const sum = document.createElement('summary');
+        sum.innerHTML = `
+          <div class="group-title"><a href="${baseUrl}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${escHtml(g.video_title)}</a></div>
+          <div class="group-meta">${date ? date + ' · ' : ''}<span class="group-count">${count} match${count !== 1 ? 'es' : ''}</span></div>`;
+        det.appendChild(sum);
+        for (const m of g.matches) det.appendChild(makeMatchCard(m));
+        right.appendChild(det);
+      }
+    }
+  }
+
+  function makeMatchCard(r) {
+    const baseUrl = `https://youtube.com/watch?v=${r.video_id}`;
+    const videoUrl = r.match_timestamp ? baseUrl + `&t=${r.match_timestamp}s` : baseUrl;
+    const tsLabel = r.match_timestamp ? fmtTime(r.match_timestamp) : '';
+    const highlighted = highlightMatch(r.context, r.matched_term);
+    const llm = r.llm_verdict ? `<div class="llm-verdict">LLM: <span>${escHtml(r.llm_verdict)}</span></div>` : '';
+    const card = document.createElement('div');
+    card.className = 'result-card';
+    card.innerHTML = `
+      <div class="card-header">
         <div class="matched-term">${escHtml(r.matched_term)}</div>
-        <div class="context-snippet">${highlighted}</div>
-        ${llm}`;
-      list.appendChild(card);
-    });
+        <div class="card-meta">${tsLabel ? '<a href="' + videoUrl + '" target="_blank" rel="noopener" style="color:var(--muted2);text-decoration:none;">@ ' + tsLabel + '</a>' : ''}</div>
+      </div>
+      <div class="context-snippet">${highlighted}</div>
+      ${llm}`;
+    return card;
   }
 
   function setButtons(running) {
