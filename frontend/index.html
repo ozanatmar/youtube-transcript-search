@@ -407,7 +407,9 @@
       </div>
 
       <div id="btn-row">
-        <button class="search-btn" id="submit-btn" onclick="startSearch()">Search</button>
+        <button class="search-btn" id="submit-btn" onclick="previewTerms()">Search</button>
+        <button class="search-btn" id="confirm-btn" onclick="confirmSearch()" style="display:none;">Confirm</button>
+        <button class="stop-btn" id="cancel-preview-btn" onclick="cancelPreview()" style="display:none;border-color:var(--muted);color:var(--muted);">cancel</button>
         <button class="stop-btn" id="stop-btn" onclick="stopSearch()">stop</button>
       </div>
 
@@ -505,17 +507,65 @@
   let pollTimer = null;
   let lastLogCount = 0;
   let lastResultCount = 0;
+  let pendingParams = null;
 
-  async function startSearch() {
+  function collectParams() {
     const channelUrl = document.getElementById('channel-url').value.trim();
     const name = document.getElementById('person-name').value.trim();
-    if (!channelUrl || !name) return;
-
+    if (!channelUrl || !name) return null;
     const sampleRaw = document.getElementById('sample-size').value.trim();
     const sampleSize = sampleRaw && /^\d+$/.test(sampleRaw) ? parseInt(sampleRaw, 10) : null;
     const randomSample = document.getElementById('random-sample').checked;
     const extraTerms = document.getElementById('extra-terms').value
       .split('\n').map(s => s.trim()).filter(Boolean);
+    return { channel_url: channelUrl, name, extra_terms: extraTerms, sample_size: sampleSize, random_sample: randomSample };
+  }
+
+  async function previewTerms() {
+    const params = collectParams();
+    if (!params) return;
+
+    document.getElementById('submit-btn').disabled = true;
+    try {
+      const res = await fetch('/preview-terms', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params),
+      });
+      const data = await res.json();
+      if (!res.ok) { document.getElementById('submit-btn').disabled = false; return; }
+
+      // Show terms and switch to confirm mode
+      const area = document.getElementById('terms-area');
+      const list = document.getElementById('terms-list');
+      area.style.display = '';
+      list.innerHTML = data.terms.map(t =>
+        `<span style="background:var(--bg3);border:1px solid var(--border);border-radius:3px;padding:1px 6px;font-size:11px;color:var(--muted2);">${escHtml(t)}</span>`
+      ).join('');
+
+      pendingParams = params;
+      document.getElementById('submit-btn').style.display = 'none';
+      document.getElementById('confirm-btn').style.display = '';
+      document.getElementById('cancel-preview-btn').style.display = 'inline-block';
+    } catch (err) {
+      document.getElementById('submit-btn').disabled = false;
+    }
+  }
+
+  function cancelPreview() {
+    pendingParams = null;
+    document.getElementById('submit-btn').style.display = '';
+    document.getElementById('submit-btn').disabled = false;
+    document.getElementById('confirm-btn').style.display = 'none';
+    document.getElementById('cancel-preview-btn').style.display = 'none';
+    document.getElementById('terms-area').style.display = 'none';
+    document.getElementById('terms-list').innerHTML = '';
+  }
+
+  async function confirmSearch() {
+    if (!pendingParams) return;
+    const params = pendingParams;
+    pendingParams = null;
 
     clearLogs();
     clearResults();
@@ -525,11 +575,7 @@
       const res = await fetch('/search', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          channel_url: channelUrl, name,
-          extra_terms: extraTerms,
-          sample_size: sampleSize, random_sample: randomSample,
-        }),
+        body: JSON.stringify(params),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -657,8 +703,6 @@
   function clearLogs() {
     document.getElementById('log-area').innerHTML =
       '<div id="log-placeholder">// logs will appear here</div>';
-    document.getElementById('terms-area').style.display = 'none';
-    document.getElementById('terms-list').innerHTML = '';
     lastLogCount = 0;
     lastStatusLine = '';
     setProgress(0, 0);
@@ -775,7 +819,10 @@
   }
 
   function setButtons(running) {
+    document.getElementById('submit-btn').style.display = '';
     document.getElementById('submit-btn').disabled = running;
+    document.getElementById('confirm-btn').style.display = 'none';
+    document.getElementById('cancel-preview-btn').style.display = 'none';
     document.getElementById('stop-btn').style.display = running ? 'inline-block' : 'none';
     document.getElementById('stop-btn').disabled = false;
   }

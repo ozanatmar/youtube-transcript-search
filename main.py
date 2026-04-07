@@ -677,6 +677,14 @@ class SearchRequest(BaseModel):
     random_sample: bool = False
 
 
+@app.post("/preview-terms")
+async def preview_terms(req: SearchRequest):
+    terms = list(dict.fromkeys(
+        expand_name(req.name) + [t.lower() for t in req.extra_terms if t.strip()]
+    ))
+    return {"terms": sorted(terms)}
+
+
 @app.post("/search")
 async def search(req: SearchRequest, background_tasks: BackgroundTasks):
     global cancel_requested, search_running
