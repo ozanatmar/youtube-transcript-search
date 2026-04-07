@@ -424,7 +424,7 @@ def stream_download_and_search(
     cookies_file = None
     cookies_b64 = os.getenv("YOUTUBE_COOKIES")
     if cookies_b64:
-        import base64, tempfile
+        import base64
         cookies_file = tempfile.NamedTemporaryFile(
             mode="wb", suffix=".txt", delete=False
         )
