@@ -448,6 +448,7 @@ def stream_download_and_search(
         text=True, encoding="utf-8", errors="replace",
     )
     current_proc = proc
+    status["log_lines"].append(f"cmd: {' '.join(cmd)}")
 
     current_vtt: Optional[Path] = None
     current_video_id: Optional[str] = None
@@ -590,6 +591,9 @@ def stream_download_and_search(
             status.update({"stage": "error", "message": line[7:].strip()})
             proc.kill()
             break
+
+        # Log any other yt-dlp output not matched above
+        log(f"yt-dlp: {line}")
 
     proc.wait()
     current_proc = None
