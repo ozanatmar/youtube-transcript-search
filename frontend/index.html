@@ -444,8 +444,8 @@
   <div id="connect-modal">
     <h2>// connect to youtube</h2>
     <ol>
-      <li>Make sure you are <a href="https://www.youtube.com" target="_blank" rel="noopener" id="yt-link">logged in to YouTube</a></li>
-      <li>Export your cookies using a browser extension<br><span style="color:var(--muted);">(e.g. "Get cookies.txt LOCALLY" for Chrome/Firefox)</span></li>
+      <li>Make sure you are logged in to <a href="https://www.youtube.com" target="_blank" rel="noopener">YouTube</a></li>
+      <li>Export your cookies using <a href="https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc?hl=en-US" target="_blank" rel="noopener">Get cookies.txt LOCALLY</a></li>
       <li>Upload the exported <code style="color:var(--accent);">cookies.txt</code> file below</li>
     </ol>
     <label class="file-upload-btn" for="cookie-file-input" id="upload-label">click to select cookies.txt</label>
@@ -572,7 +572,6 @@
     document.getElementById('connect-error').style.display = 'none';
     document.getElementById('cookie-file-input').value = '';
     document.getElementById('connect-overlay').classList.add('open');
-    window.open('https://www.youtube.com', '_blank');
   }
 
   function closeConnectModal() {
