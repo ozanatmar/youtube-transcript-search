@@ -434,7 +434,7 @@ def stream_download_and_search(
     cmd = [
         sys.executable, "-m", "yt_dlp",
         "--skip-download", "--write-sub", "--write-auto-sub",
-        "--sub-lang", "en.*", "--convert-subs", "vtt",
+        "--sub-lang", "en", "--convert-subs", "vtt",
         "--ignore-no-formats-error",
         "--extractor-args", "youtube:player_client=web",
         "--js-runtimes", "node",
