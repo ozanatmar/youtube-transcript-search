@@ -559,10 +559,9 @@
 
   function setYtConnected(connected) {
     ytConnected = connected;
-    document.getElementById('yt-status-dot').style.background = connected ? 'var(--accent)' : 'var(--error)';
-    document.getElementById('yt-status-label').textContent = connected ? 'connected' : 'not connected';
+    document.getElementById('yt-status-dot').style.background = connected ? 'var(--accent)' : 'var(--muted)';
+    document.getElementById('yt-status-label').textContent = connected ? 'youtube connected' : 'public only';
     document.getElementById('yt-connect-btn').textContent = connected ? 'reconnect' : 'connect to youtube';
-    document.getElementById('submit-btn').disabled = !connected;
   }
 
   function openConnectModal() {
@@ -681,7 +680,6 @@
   }
 
   async function previewTerms() {
-    if (!ytConnected) { openConnectModal(); return; }
     const params = collectParams();
     if (!params) return;
 
@@ -994,7 +992,7 @@
 
   function setButtons(running) {
     document.getElementById('submit-btn').style.display = '';
-    document.getElementById('submit-btn').disabled = running || !ytConnected;
+    document.getElementById('submit-btn').disabled = running;
     document.getElementById('confirm-btn').style.display = 'none';
     document.getElementById('cancel-preview-btn').style.display = 'none';
     document.getElementById('stop-btn').style.display = running ? 'inline-block' : 'none';
