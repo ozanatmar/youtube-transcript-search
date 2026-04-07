@@ -800,7 +800,7 @@
 
       // Dual progress bars
       const dlPct  = data.videos_total > 0 ? Math.round(data.videos_done / data.videos_total * 100) : 0;
-      const srPct  = data.videos_total > 0 ? Math.round(data.total_videos_searched / data.videos_total * 100) : 0;
+      const srPct  = data.videos_total > 0 ? Math.round((data.total_videos_processed || 0) / data.videos_total * 100) : 0;
       setProgress(dlPct, srPct);
 
       // Re-render grouped results when new ones arrive

@@ -41,6 +41,7 @@ status: dict = {
     "results": [],
     "total_matches": 0,
     "total_videos_searched": 0,
+    "total_videos_processed": 0,
     "terms": [],
     "report": None,
 }
@@ -381,6 +382,7 @@ def _flush_vtt(vtt_path: Path, terms: list[str], target_name: str, item_number: 
     """Search a completed VTT file, push results into status, return matches."""
     matches = search_vtt(vtt_path, terms, target_name)
     status["total_videos_searched"] += 1
+    status["total_videos_processed"] += 1
     if matches:
         for m in matches:
             m["item_number"] = item_number
@@ -508,6 +510,7 @@ def stream_download_and_search(
             url = yt_url(current_video_id)
             p = prefix(current_item, current_total)
             log_or_replace(f"{p}no transcript  {url}")
+            status["total_videos_processed"] += 1
         has_transcript = False
 
     for raw_line in proc.stdout:
@@ -702,7 +705,7 @@ async def search(req: SearchRequest, background_tasks: BackgroundTasks):
         "videos_done": 0, "videos_total": 0,
         "message": "Initializing...",
         "log_lines": [], "log_total": 0, "results": [], "terms": [], "report": None,
-        "total_matches": 0, "total_videos_searched": 0,
+        "total_matches": 0, "total_videos_searched": 0, "total_videos_processed": 0,
         "result": None,
     })
 
