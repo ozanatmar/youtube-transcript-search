@@ -848,10 +848,21 @@
     const area = document.getElementById('log-area');
     const div = document.createElement('div');
     div.className = 'log-line' + (isStatus ? ' status-line' : '');
-    if (isError) div.style.color = 'var(--error)';
     const isStub = text.startsWith('\u29d7');
     const display = isStub ? text.slice(1) : text;
-    if (isStub) div.style.color = 'var(--muted2)';
+    if (isError) {
+      div.style.color = 'var(--error)';
+    } else if (isStub) {
+      div.style.color = 'var(--muted2)';
+    } else if (display.startsWith('\u00bb ')) {
+      div.style.color = 'var(--accent)';
+      div.style.opacity = '0.7';
+      div.style.fontSize = '10px';
+      div.style.paddingLeft = '10px';
+    } else if (display.includes('no transcript')) {
+      div.style.color = 'var(--error)';
+      div.style.opacity = '0.7';
+    }
     div.innerHTML = linkify(escHtml(display));
     area.appendChild(div);
     area.scrollTop = area.scrollHeight;

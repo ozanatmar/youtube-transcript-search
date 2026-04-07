@@ -372,6 +372,32 @@ def fmttime(secs: int) -> str:
     return f"{m}:{s:02d}"
 
 
+def _vtt_snippet(vtt_path: Path, max_chars: int = 140) -> str:
+    """Return first max_chars of deduplicated plain text from a VTT file."""
+    try:
+        text = vtt_path.read_text(encoding="utf-8", errors="ignore")
+        seen: set[str] = set()
+        parts: list[str] = []
+        total = 0
+        for line in text.splitlines():
+            line = line.strip()
+            if not line or line.startswith("WEBVTT") or "-->" in line or line.isdigit():
+                continue
+            clean = re.sub(r"<[^>]+>", "", line).strip()
+            if clean and clean not in seen:
+                seen.add(clean)
+                parts.append(clean)
+                total += len(clean) + 1
+                if total >= max_chars:
+                    break
+        combined = " ".join(parts)
+        if len(combined) > max_chars:
+            combined = combined[:max_chars].rsplit(" ", 1)[0] + "…"
+        return combined
+    except Exception:
+        return ""
+
+
 def _vtt_title(vtt_path: Path) -> str:
     stem = re.sub(r"\.en$", "", vtt_path.stem)
     m = FNAME_RE.match(stem)
@@ -453,7 +479,6 @@ def stream_download_and_search(
         text=True, encoding="utf-8", errors="replace",
     )
     current_proc = proc
-    status["log_lines"].append(f"cmd: {' '.join(cmd)}")
 
     current_vtt: Optional[Path] = None
     current_video_id: Optional[str] = None
@@ -490,6 +515,7 @@ def stream_download_and_search(
         nonlocal current_vtt, has_transcript
         if current_vtt:
             vid_id = current_video_id
+            vtt_for_snippet = current_vtt
             matches = _flush_vtt(current_vtt, terms, target_name, current_item)
             title = _vtt_title(current_vtt)
             n = current_item
@@ -505,6 +531,9 @@ def stream_download_and_search(
             else:
                 url = yt_url(vid_id)
                 log_or_replace(f"{p}[{title}] — no match  {url}")
+            snippet = _vtt_snippet(vtt_for_snippet)
+            if snippet:
+                log(f"\u00bb {snippet}")
             current_vtt = None
         elif has_transcript is False and (current_item > 0 or current_video_id):
             url = yt_url(current_video_id)
@@ -567,6 +596,7 @@ def stream_download_and_search(
         # 100% done — flush immediately (fast path)
         if current_vtt and DONE_LINE.search(line):
             vid_id = current_video_id
+            vtt_for_snippet = current_vtt
             matches = _flush_vtt(current_vtt, terms, target_name, current_item)
             title = _vtt_title(current_vtt)
             n = current_item
@@ -583,6 +613,9 @@ def stream_download_and_search(
                 url = yt_url(vid_id)
                 new_line = f"{p}[{title}] — no match  {url}"
             log_or_replace(new_line)
+            snippet = _vtt_snippet(vtt_for_snippet)
+            if snippet:
+                log(f"\u00bb {snippet}")
             current_vtt = None
             continue
 
@@ -597,9 +630,6 @@ def stream_download_and_search(
             status.update({"stage": "error", "message": line[7:].strip()})
             proc.kill()
             break
-
-        # Log any other yt-dlp output not matched above
-        log(f"yt-dlp: {line}")
 
     proc.wait()
     current_proc = None
