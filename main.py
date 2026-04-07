@@ -11,7 +11,9 @@ from pathlib import Path
 from typing import Optional
 
 from dotenv import load_dotenv
-from fastapi import BackgroundTasks, FastAPI
+import base64
+
+from fastapi import BackgroundTasks, FastAPI, UploadFile, File
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -25,6 +27,9 @@ LLM_MODEL = "gpt-5.4-mini"
 LLM_ENABLED = True
 
 app = FastAPI()
+
+# Session cookies — seeded from env var, overridable via /upload-cookies
+session_cookies_b64: Optional[str] = os.getenv("YOUTUBE_COOKIES") or None
 
 status: dict = {
     "stage": "idle",
@@ -420,15 +425,13 @@ def stream_download_and_search(
         status.update({"stage": "downloading", "message": "Starting download..."})
         extra_args = [target_url]
 
-    # Write cookies file if YOUTUBE_COOKIES env var is set
+    # Write cookies file if available
     cookies_file = None
-    cookies_b64 = os.getenv("YOUTUBE_COOKIES")
-    if cookies_b64:
-        import base64
+    if session_cookies_b64:
         cookies_file = tempfile.NamedTemporaryFile(
             mode="wb", suffix=".txt", delete=False
         )
-        cookies_file.write(base64.b64decode(cookies_b64))
+        cookies_file.write(base64.b64decode(session_cookies_b64))
         cookies_file.close()
 
     cmd = [
@@ -719,6 +722,19 @@ async def cancel():
         current_proc.kill()
     status.update({"stage": "cancelled", "message": "Search cancelled."})
     return {"status": "cancelled"}
+
+
+@app.get("/cookie-status")
+async def cookie_status():
+    return {"connected": session_cookies_b64 is not None}
+
+
+@app.post("/upload-cookies")
+async def upload_cookies(file: UploadFile = File(...)):
+    global session_cookies_b64
+    content = await file.read()
+    session_cookies_b64 = base64.b64encode(content).decode()
+    return {"status": "ok"}
 
 
 @app.get("/status")
