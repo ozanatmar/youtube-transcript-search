@@ -862,6 +862,9 @@
     } else if (display.includes('no transcript')) {
       div.style.color = 'var(--error)';
       div.style.opacity = '0.7';
+    } else if (display.startsWith('\u26a0')) {
+      div.style.color = 'var(--warn)';
+      div.style.fontWeight = 'bold';
     }
     div.innerHTML = linkify(escHtml(display));
     area.appendChild(div);

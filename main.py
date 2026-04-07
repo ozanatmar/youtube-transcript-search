@@ -486,6 +486,8 @@ def stream_download_and_search(
     current_total = 0
     has_transcript = False
     playlist_logged = False
+    consecutive_no_sub = 0
+    cookie_warning_shown = False
 
     def log(msg: str):
         status["log_lines"].append(msg)
@@ -588,6 +590,7 @@ def stream_download_and_search(
             if current_vtt != vtt_path:  # only log stub once per file
                 current_vtt = vtt_path
                 has_transcript = True
+                consecutive_no_sub = 0
                 title = _vtt_title(current_vtt)
                 p = prefix(current_item, current_total)
                 log(f"\u29d7{p}[{title}]")  # stub line; replaced when result known
@@ -622,6 +625,11 @@ def stream_download_and_search(
         # Surface [info] lines that explain why subtitles are unavailable
         if line.startswith("[info]") and ("subtitle" in line.lower() or "caption" in line.lower()):
             log(f"yt-dlp: {line[7:].strip()}")
+            if "no subtitles" in line.lower() or "no supported" in line.lower():
+                consecutive_no_sub += 1
+                if consecutive_no_sub == 5 and not cookie_warning_shown and session_cookies_b64:
+                    cookie_warning_shown = True
+                    log("⚠ YouTube is returning no subtitles for every video — your cookies may have expired. Use 'Connect to YouTube' to upload fresh cookies.")
             continue
 
         # Stop on any yt-dlp error
