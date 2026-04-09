@@ -541,6 +541,7 @@ def stream_download_and_search(
         "--ignore-no-formats-error",
         "--output", str(out_dir / "%(upload_date)s_%(id)s_%(title)s.%(ext)s"),
         "--no-warnings", "--ignore-errors",
+        "--sleep-interval", "2", "--max-sleep-interval", "5",
         "--batch-file", batch_file,
     ]
     if cookies_file:
@@ -564,15 +565,24 @@ def stream_download_and_search(
     def flush_and_log():
         nonlocal current_vtt, has_transcript
         if current_vtt:
-            vid_id = current_video_id
-            vtt_for_snippet = current_vtt
-            emit_vtt_result(vtt_for_snippet, vid_id, current_item, current_total)
+            emit_vtt_result(current_vtt, current_video_id, current_item, current_total)
             current_vtt = None
         elif has_transcript is False and (current_item > 0 or current_video_id):
-            url = yt_url(current_video_id)
-            p = prefix(current_item, current_total)
-            log_or_replace(f"{p}no transcript  {url}")
-            status["total_videos_processed"] += 1
+            # yt-dlp said no subtitles — check if we actually have a cached VTT for this ID
+            # (can happen if yt-dlp is rate-limited but the file exists from a prior run)
+            fallback = (
+                next(out_dir.glob(f"*_{current_video_id}_*.en.vtt"), None)
+                if current_video_id and current_video_id not in cached_ids
+                else None
+            )
+            if fallback:
+                cached_ids.add(current_video_id)
+                emit_vtt_result(fallback, current_video_id, current_item, current_total)
+            else:
+                url = yt_url(current_video_id)
+                p = prefix(current_item, current_total)
+                log_or_replace(f"{p}no transcript  {url}")
+                status["total_videos_processed"] += 1
         has_transcript = False
 
     for raw_line in proc.stdout:
@@ -595,9 +605,11 @@ def stream_download_and_search(
         # Track current video ID (two possible patterns)
         m = VIDEO_ID_LINE.search(line) or EXTRACT_LINE.search(line)
         if m:
-            current_video_id = m.group(1)
-            if current_total == 0:  # single video mode — log it so the user sees activity
-                log(f"\u29d7[{current_video_id}]")
+            new_id = m.group(1)
+            if new_id != current_video_id:
+                current_video_id = new_id
+                if current_total == 0:  # batch/single mode — log stub so user sees activity
+                    log(f"\u29d7[{current_video_id}]")
             continue
 
         # New item — flush previous
