@@ -417,64 +417,7 @@ def stream_download_and_search(
     target_url = videos_tab_url(channel_url)
     batch_file = None
 
-    if sample_size is not None and random_sample:
-        all_ids = fetch_video_ids(target_url)
-        if not all_ids:
-            return
-        chosen = random.sample(all_ids, min(sample_size, len(all_ids)))
-        status.update({
-            "stage": "downloading", "videos_done": 0, "videos_total": len(chosen),
-            "message": f"Sampled {len(chosen)} of {len(all_ids)} randomly. Downloading...",
-        })
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False, encoding="utf-8") as f:
-            f.write("\n".join(f"https://www.youtube.com/watch?v={vid}" for vid in chosen))
-            batch_file = f.name
-        extra_args = ["--batch-file", batch_file]
-    elif sample_size is not None:
-        status.update({
-            "stage": "downloading", "videos_done": 0, "videos_total": sample_size,
-            "message": f"Downloading first {sample_size} videos...",
-        })
-        extra_args = ["--playlist-end", str(sample_size), target_url]
-    else:
-        status.update({"stage": "downloading", "message": "Starting download..."})
-        extra_args = [target_url]
-
-    # Write cookies file if available
-    cookies_file = None
-    if session_cookies_b64:
-        cookies_file = tempfile.NamedTemporaryFile(
-            mode="wb", suffix=".txt", delete=False
-        )
-        cookies_file.write(base64.b64decode(session_cookies_b64))
-        cookies_file.close()
-
-    cmd = [
-        sys.executable, "-m", "yt_dlp",
-        "--skip-download", "--write-sub", "--write-auto-sub",
-        "--sub-lang", "en", "--convert-subs", "vtt",
-        "--ignore-no-formats-error",
-        "--output", str(out_dir / "%(upload_date)s_%(id)s_%(title)s.%(ext)s"),
-        "--no-warnings", "--ignore-errors",
-    ]
-    if cookies_file:
-        cmd += ["--cookies", cookies_file.name]
-    cmd += extra_args
-
-    proc = subprocess.Popen(
-        cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-        text=True, encoding="utf-8", errors="replace",
-    )
-    current_proc = proc
-
-    current_vtt: Optional[Path] = None
-    current_video_id: Optional[str] = None
-    current_item = 0
-    current_total = 0
-    has_transcript = False
-    playlist_logged = False
-    consecutive_no_sub = 0
-    cookie_warning_shown = False
+    # --- Shared helpers (used in both cache and yt-dlp phases) ---
 
     def log(msg: str):
         status["log_lines"].append(msg)
@@ -494,35 +437,136 @@ def stream_download_and_search(
         return f"({n}/{total}) " if total else ""
 
     def log_or_replace(new_line: str):
-        """Replace last log line if it's a pending 'loading' stub, else append."""
         if status["log_lines"] and status["log_lines"][-1].startswith("\u29d7"):
             status["log_lines"][-1] = new_line
         else:
             log(new_line)
+
+    def emit_vtt_result(vtt_path: Path, vid_id: Optional[str], item_n: int, item_total: int):
+        matches = _flush_vtt(vtt_path, terms, target_name, item_n)
+        title = _vtt_title(vtt_path)
+        p = prefix(item_n, item_total)
+        if matches:
+            unique_terms = list(dict.fromkeys(m["matched_term"] for m in matches))
+            terms_hit = ", ".join(unique_terms)
+            ts = matches[0].get("match_timestamp", 0)
+            ts_str = f" @ {fmttime(ts)}" if ts else ""
+            count_str = f" ({len(matches)}×)" if len(matches) > 1 else ""
+            url = yt_url(vid_id, ts)
+            log_or_replace(f"{p}[{title}] — found: {terms_hit}{ts_str}{count_str}  {url}")
+        else:
+            url = yt_url(vid_id)
+            log_or_replace(f"{p}[{title}] — no match  {url}")
+        snippet = _vtt_snippet(vtt_path)
+        if snippet:
+            log(f"\u00bb {snippet}")
+        return matches
+
+    # --- Phase 1: search already-cached VTT files ---
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    cached_vtts = sorted(out_dir.glob("*.en.vtt"))
+    cached_ids: set[str] = set()
+    for vtt in cached_vtts:
+        stem = re.sub(r"\.en$", "", vtt.stem)
+        fm = FNAME_RE.match(stem)
+        if fm:
+            cached_ids.add(fm.group(2))
+
+    if cached_vtts:
+        n_cached = len(cached_vtts)
+        status.update({
+            "stage": "downloading", "videos_done": 0, "videos_total": n_cached,
+            "message": f"Searching {n_cached} cached transcripts...",
+        })
+        for i, vtt in enumerate(cached_vtts, 1):
+            if cancel_requested:
+                return
+            stem = re.sub(r"\.en$", "", vtt.stem)
+            fm = FNAME_RE.match(stem)
+            vid_id = fm.group(2) if fm else None
+            title = _vtt_title(vtt)
+            log(f"\u29d7({i}/{n_cached}) [{title}]")
+            emit_vtt_result(vtt, vid_id, i, n_cached)
+            status.update({
+                "videos_done": i,
+                "message": f"Searching cached transcripts... ({i}/{n_cached})",
+            })
+
+    # --- Phase 2: fetch video list, find missing IDs, run yt-dlp ---
+
+    status.update({"stage": "downloading", "message": "Fetching video list..."})
+    all_ids = fetch_video_ids(target_url)
+    if not all_ids:
+        return
+
+    # Apply sample logic to the full list
+    if sample_size is not None and random_sample:
+        candidate_ids = random.sample(all_ids, min(sample_size, len(all_ids)))
+    elif sample_size is not None:
+        candidate_ids = all_ids[:sample_size]
+    else:
+        candidate_ids = all_ids
+
+    missing_ids = [vid for vid in candidate_ids if vid not in cached_ids]
+
+    if not missing_ids:
+        status.update({"message": "All videos already cached — no new downloads needed."})
+        log("All videos already cached.")
+        return
+
+    n_missing = len(missing_ids)
+    status.update({
+        "stage": "downloading", "videos_done": 0, "videos_total": n_missing,
+        "message": f"Downloading {n_missing} new transcripts...",
+    })
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False, encoding="utf-8") as f:
+        f.write("\n".join(f"https://www.youtube.com/watch?v={vid}" for vid in missing_ids))
+        batch_file = f.name
+
+    # Write cookies file if available
+    cookies_file = None
+    if session_cookies_b64:
+        cookies_file = tempfile.NamedTemporaryFile(
+            mode="wb", suffix=".txt", delete=False
+        )
+        cookies_file.write(base64.b64decode(session_cookies_b64))
+        cookies_file.close()
+
+    cmd = [
+        sys.executable, "-m", "yt_dlp",
+        "--skip-download", "--write-sub", "--write-auto-sub",
+        "--sub-lang", "en", "--convert-subs", "vtt",
+        "--ignore-no-formats-error",
+        "--output", str(out_dir / "%(upload_date)s_%(id)s_%(title)s.%(ext)s"),
+        "--no-warnings", "--ignore-errors",
+        "--batch-file", batch_file,
+    ]
+    if cookies_file:
+        cmd += ["--cookies", cookies_file.name]
+
+    proc = subprocess.Popen(
+        cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        text=True, encoding="utf-8", errors="replace",
+    )
+    current_proc = proc
+
+    current_vtt: Optional[Path] = None
+    current_video_id: Optional[str] = None
+    current_item = 0
+    current_total = 0
+    has_transcript = False
+    playlist_logged = False
+    consecutive_no_sub = 0
+    cookie_warning_shown = False
 
     def flush_and_log():
         nonlocal current_vtt, has_transcript
         if current_vtt:
             vid_id = current_video_id
             vtt_for_snippet = current_vtt
-            matches = _flush_vtt(current_vtt, terms, target_name, current_item)
-            title = _vtt_title(current_vtt)
-            n = current_item
-            p = prefix(n, current_total)
-            if matches:
-                unique_terms = list(dict.fromkeys(m["matched_term"] for m in matches))
-                terms_hit = ", ".join(unique_terms)
-                ts = matches[0].get("match_timestamp", 0)
-                ts_str = f" @ {fmttime(ts)}" if ts else ""
-                count_str = f" ({len(matches)}×)" if len(matches) > 1 else ""
-                url = yt_url(vid_id, ts)
-                log_or_replace(f"{p}[{title}] — found: {terms_hit}{ts_str}{count_str}  {url}")
-            else:
-                url = yt_url(vid_id)
-                log_or_replace(f"{p}[{title}] — no match  {url}")
-            snippet = _vtt_snippet(vtt_for_snippet)
-            if snippet:
-                log(f"\u00bb {snippet}")
+            emit_vtt_result(vtt_for_snippet, vid_id, current_item, current_total)
             current_vtt = None
         elif has_transcript is False and (current_item > 0 or current_video_id):
             url = yt_url(current_video_id)
@@ -585,27 +629,7 @@ def stream_download_and_search(
 
         # 100% done — flush immediately (fast path)
         if current_vtt and DONE_LINE.search(line):
-            vid_id = current_video_id
-            vtt_for_snippet = current_vtt
-            matches = _flush_vtt(current_vtt, terms, target_name, current_item)
-            title = _vtt_title(current_vtt)
-            n = current_item
-            p = prefix(n, current_total)
-            if matches:
-                unique_terms = list(dict.fromkeys(mx["matched_term"] for mx in matches))
-                terms_hit = ", ".join(unique_terms)
-                ts = matches[0].get("match_timestamp", 0)
-                ts_str = f" @ {fmttime(ts)}" if ts else ""
-                count_str = f" ({len(matches)}×)" if len(matches) > 1 else ""
-                url = yt_url(vid_id, ts)
-                new_line = f"{p}[{title}] — found: {terms_hit}{ts_str}{count_str}  {url}"
-            else:
-                url = yt_url(vid_id)
-                new_line = f"{p}[{title}] — no match  {url}"
-            log_or_replace(new_line)
-            snippet = _vtt_snippet(vtt_for_snippet)
-            if snippet:
-                log(f"\u00bb {snippet}")
+            emit_vtt_result(current_vtt, current_video_id, current_item, current_total)
             current_vtt = None
             continue
 
@@ -647,7 +671,6 @@ def run_search(
     try:
         slug = channel_slug(channel_url)
         out_dir = Path(TRANSCRIPTS_DIR) / slug
-        out_dir.mkdir(parents=True, exist_ok=True)
 
         terms = list(dict.fromkeys(
             expand_name(name) + [t.lower() for t in extra_terms if t.strip()]
