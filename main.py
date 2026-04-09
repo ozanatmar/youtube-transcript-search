@@ -218,23 +218,38 @@ For each match below, classify it as one of:
 
 Group results by video. For CONFIRMED, LIKELY, and AMBIGUOUS matches include the timestamp URL."""
 
-        lines = []
-        for i, m in enumerate(matches[:150]):
-            ts = fmttime(m["match_timestamp"]) if m.get("match_timestamp") else "?"
-            url = f"https://youtube.com/watch?v={m['video_id']}&t={m['match_timestamp']}s"
-            year = m["upload_date"][:4] if m.get("upload_date", "unknown") != "unknown" else "?"
-            lines.append(
-                f"{i+1}. \"{m['video_title']}\" ({year}) | {ts} | {url}\n"
-                f"   matched term: \"{m['matched_term']}\" | transcript context: {m['context'][:250]}"
+        # Group matches by video
+        from collections import defaultdict
+        by_video: dict = defaultdict(list)
+        for m in matches:
+            by_video[m["video_id"]].append(m)
+
+        video_blocks = []
+        for vid_id, vid_matches in by_video.items():
+            first = vid_matches[0]
+            year = first["upload_date"][:4] if first.get("upload_date", "unknown") != "unknown" else "?"
+            title = first["video_title"]
+            video_url = f"https://youtube.com/watch?v={vid_id}"
+
+            match_lines = []
+            for m in vid_matches:
+                ts = fmttime(m["match_timestamp"]) if m.get("match_timestamp") else "?"
+                ts_url = f"https://youtube.com/watch?v={vid_id}&t={m['match_timestamp']}s"
+                match_lines.append(
+                    f"  - {ts} [{ts_url}] matched: \"{m['matched_term']}\" | {m['context'][:200]}"
+                )
+
+            video_blocks.append(
+                f"### \"{title}\" ({year})\n"
+                f"Video: {video_url}\n"
+                + "\n".join(match_lines)
             )
 
         prompt = (
             context_block
-            + f"\n\n---\nTotal matches: {len(matches)}"
-            + (f" (showing first 150)" if len(matches) > 150 else "")
-            + "\n\n"
-            + "\n\n".join(lines)
-            + "\n\n---\nWrite the report now. Be direct and concise. Skip COINCIDENTAL matches unless there are many — just note the count."
+            + f"\n\n---\nTotal matches: {len(matches)} across {len(by_video)} video(s).\n\n"
+            + "\n\n".join(video_blocks)
+            + "\n\n---\nWrite the report now. Group by video. For every CONFIRMED, LIKELY, and AMBIGUOUS match include the exact timestamp URL. Be direct and concise. Just note the count of COINCIDENTAL matches per video — don't list them individually."
         )
 
         client = OpenAI(api_key=api_key)
@@ -336,12 +351,11 @@ def search_vtt(vtt_path: Path, terms: list[str], target_name: str) -> list[dict]
 
     for term in terms:
         term_lower = term.lower()
-        term_len = len(term)
+        pattern = re.compile(r'\b' + re.escape(term_lower) + r'\b')
 
-        pos = full_lower.find(term_lower)
-        while pos != -1:
+        for mo in pattern.finditer(full_lower):
+            pos = mo.start()
             if pos in seen_positions:
-                pos = full_lower.find(term_lower, pos + 1)
                 continue
 
             match_ts = 0
@@ -351,7 +365,7 @@ def search_vtt(vtt_path: Path, terms: list[str], target_name: str) -> list[dict]
                     break
 
             seen_positions.add(pos)
-            context = extract_context(full_text, pos, pos + term_len)
+            context = extract_context(full_text, pos, mo.end())
             results.append({
                 "video_id": video_id,
                 "video_title": video_title,
@@ -360,8 +374,6 @@ def search_vtt(vtt_path: Path, terms: list[str], target_name: str) -> list[dict]
                 "matched_term": term,
                 "context": context,
             })
-
-            pos = full_lower.find(term_lower, pos + term_len)
 
     return results
 
