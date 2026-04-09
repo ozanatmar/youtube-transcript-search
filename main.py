@@ -493,39 +493,10 @@ def stream_download_and_search(
                 "message": f"Searching cached transcripts... ({i}/{n_cached})",
             })
 
-    # --- Phase 2: fetch video list, find missing IDs, run yt-dlp ---
+    # --- Phase 2: run yt-dlp for any remaining/new videos ---
 
-    log(f"Cache phase complete ({len(cached_ids)} video(s) cached). Fetching channel video list...")
-    status.update({"stage": "downloading", "message": "Fetching video list..."})
-    all_ids = fetch_video_ids(target_url)
-    if not all_ids:
-        log("Could not fetch video list from YouTube (rate-limited or network error).")
-        return
-
-    # Apply sample logic to the full list
-    if sample_size is not None and random_sample:
-        candidate_ids = random.sample(all_ids, min(sample_size, len(all_ids)))
-    elif sample_size is not None:
-        candidate_ids = all_ids[:sample_size]
-    else:
-        candidate_ids = all_ids
-
-    missing_ids = [vid for vid in candidate_ids if vid not in cached_ids]
-    log(f"Video list: {len(all_ids)} total, {len(cached_ids)} cached, {len(missing_ids)} to download.")
-
-    if not missing_ids:
-        log("All videos already cached — no new downloads needed.")
-        return
-
-    n_missing = len(missing_ids)
-    status.update({
-        "stage": "downloading", "videos_done": 0, "videos_total": n_missing,
-        "message": f"Downloading {n_missing} new transcripts...",
-    })
-
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False, encoding="utf-8") as f:
-        f.write("\n".join(f"https://www.youtube.com/watch?v={vid}" for vid in missing_ids))
-        batch_file = f.name
+    if cached_vtts:
+        log(f"Cache: {len(cached_ids)} video(s) searched. Checking for new videos...")
 
     # Write cookies file if available
     cookies_file = None
@@ -536,6 +507,30 @@ def stream_download_and_search(
         cookies_file.write(base64.b64decode(session_cookies_b64))
         cookies_file.close()
 
+    if sample_size is not None and random_sample:
+        all_ids = fetch_video_ids(target_url)
+        if not all_ids:
+            log("Could not fetch video list from YouTube.")
+            return
+        chosen = random.sample(all_ids, min(sample_size, len(all_ids)))
+        missing = [v for v in chosen if v not in cached_ids]
+        if not missing:
+            log("All sampled videos already cached.")
+            return
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False, encoding="utf-8") as f:
+            f.write("\n".join(f"https://www.youtube.com/watch?v={v}" for v in missing))
+            batch_file = f.name
+        extra_args = ["--batch-file", batch_file]
+        status.update({"videos_done": 0, "videos_total": len(missing),
+                        "message": f"Downloading {len(missing)} sampled transcripts..."})
+    elif sample_size is not None:
+        extra_args = ["--playlist-end", str(sample_size), target_url]
+        status.update({"videos_done": 0, "videos_total": sample_size,
+                        "message": f"Downloading first {sample_size} transcripts..."})
+    else:
+        extra_args = [target_url]
+        status.update({"message": "Downloading transcripts..."})
+
     cmd = [
         sys.executable, "-m", "yt_dlp",
         "--skip-download", "--write-sub", "--write-auto-sub",
@@ -543,11 +538,10 @@ def stream_download_and_search(
         "--ignore-no-formats-error",
         "--output", str(out_dir / "%(upload_date)s_%(id)s_%(title)s.%(ext)s"),
         "--no-warnings", "--ignore-errors",
-        "--sleep-interval", "2", "--max-sleep-interval", "5",
-        "--batch-file", batch_file,
     ]
     if cookies_file:
         cmd += ["--cookies", cookies_file.name]
+    cmd += extra_args
 
     proc = subprocess.Popen(
         cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
