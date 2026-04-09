@@ -183,12 +183,41 @@ def extract_context(text: str, match_start: int, match_end: int, window: int = 2
 
 # --- LLM ---
 
-def generate_report(matches: list[dict], target_name: str) -> str:
+def generate_report(matches: list[dict], target_name: str, extra_terms: Optional[list[str]] = None) -> str:
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
         return "No API key configured — report unavailable."
     try:
         from openai import OpenAI
+
+        extra_terms = [t.lower().strip() for t in (extra_terms or []) if t.strip()]
+
+        # Separate former names from project/topic terms.
+        # Heuristic: single common first names are likely former names; everything else is a project.
+        COMMON_FIRST_NAMES = {"justin", "justing", "alex", "chris", "pat", "sam", "jordan"}
+        former_names = [t for t in extra_terms if t in COMMON_FIRST_NAMES]
+        project_terms = [t for t in extra_terms if t not in COMMON_FIRST_NAMES]
+
+        name_terms = expand_name(target_name)
+
+        context_block = f"""You are helping determine whether YouTube videos discuss a specific person: {target_name}.
+
+Key facts about this person:
+- She is a trans woman (use she/her).
+- Her current name is {target_name}. Transcripts may use her current name or name variants: {", ".join(sorted(name_terms))}.
+- Former name before transition: {", ".join(former_names) if former_names else "not provided"}. Mentions of this name may refer to her, especially if the video is about her field of work.
+- She is known for founding/maintaining these open-source ML/robotics projects and organizations: {", ".join(project_terms) if project_terms else "not provided"}.
+  A mention of any of these terms in an ML or robotics context is likely referring to her work, even if her name is not said aloud.
+  Some videos may show her old GitHub/Twitter account or photo while discussing these projects — that still counts.
+
+For each match below, classify it as one of:
+- CONFIRMED: Clearly about her — current or former name used, or her project mentioned with clear attribution to her as creator/maintainer.
+- LIKELY: Her project/org is mentioned in a relevant ML/robotics context. She would typically be credited, even if not named in this excerpt.
+- AMBIGUOUS: Could be her, worth a manual check — e.g. former name used but unclear if it's her, or a project term used without enough context.
+- COINCIDENTAL: Clearly unrelated — e.g. "gym" meaning a fitness centre, "justin" as an unrelated person, generic use of a common word.
+
+Group results by video. For CONFIRMED, LIKELY, and AMBIGUOUS matches include the timestamp URL."""
+
         lines = []
         for i, m in enumerate(matches[:150]):
             ts = fmttime(m["match_timestamp"]) if m.get("match_timestamp") else "?"
@@ -196,18 +225,18 @@ def generate_report(matches: list[dict], target_name: str) -> str:
             year = m["upload_date"][:4] if m.get("upload_date", "unknown") != "unknown" else "?"
             lines.append(
                 f"{i+1}. \"{m['video_title']}\" ({year}) | {ts} | {url}\n"
-                f"   matched: \"{m['matched_term']}\" | context: {m['context'][:200]}"
+                f"   matched term: \"{m['matched_term']}\" | transcript context: {m['context'][:250]}"
             )
+
         prompt = (
-            f"I searched YouTube transcripts for mentions of \"{target_name}\" and found {len(matches)} match(es).\n\n"
-            f"{'(Showing first 150)' if len(matches) > 150 else ''}\n\n"
+            context_block
+            + f"\n\n---\nTotal matches: {len(matches)}"
+            + (f" (showing first 150)" if len(matches) > 150 else "")
+            + "\n\n"
             + "\n\n".join(lines)
-            + f"\n\nWrite a concise report:\n"
-            f"1. Confirmed — matches clearly referring to {target_name}\n"
-            f"2. Ambiguous — could be this person, worth checking\n"
-            f"3. Coincidental — different person or common word\n\n"
-            f"For each confirmed or ambiguous match include the timestamp URL. Be direct and concise."
+            + "\n\n---\nWrite the report now. Be direct and concise. Skip COINCIDENTAL matches unless there are many — just note the count."
         )
+
         client = OpenAI(api_key=api_key)
         msg = client.chat.completions.create(
             model=LLM_MODEL,
@@ -728,7 +757,7 @@ def run_search(
         if m > 0 and os.getenv("ANTHROPIC_API_KEY"):
             status["log_lines"].append("Generating AI report...")
             status["report"] = "generating"
-            status["report"] = generate_report(status["results"], name)
+            status["report"] = generate_report(status["results"], name, extra_terms)
             status["log_lines"][-1] = "AI report ready."
 
         status.update({
