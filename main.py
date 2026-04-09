@@ -538,6 +538,7 @@ def stream_download_and_search(
         "--skip-download", "--write-sub", "--write-auto-sub",
         "--sub-lang", "en", "--convert-subs", "vtt",
         "--ignore-no-formats-error", "--no-overwrites",
+        "--sleep-interval", "2", "--max-sleep-interval", "5",
         "--output", str(out_dir / "%(upload_date)s_%(id)s_%(title)s.%(ext)s"),
         "--no-warnings", "--ignore-errors",
     ]
