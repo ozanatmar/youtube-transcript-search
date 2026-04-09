@@ -626,7 +626,16 @@ def stream_download_and_search(
         m = WRITE_LINE.search(line) or DEST_LINE.search(line) or ALREADY_LINE.search(line)
         if m:
             vtt_path = Path(m.group(1))
-            if current_vtt != vtt_path:  # only log stub once per file
+            # Skip files already searched in Phase 1
+            stem = re.sub(r"\.en$", "", vtt_path.stem)
+            fm = FNAME_RE.match(stem)
+            vid_id = fm.group(2) if fm else None
+            if vid_id and vid_id in cached_ids:
+                has_transcript = True  # prevents spurious "no transcript" log
+                current_vtt = None
+                consecutive_no_sub = 0
+                continue
+            if current_vtt != vtt_path:
                 current_vtt = vtt_path
                 has_transcript = True
                 consecutive_no_sub = 0
