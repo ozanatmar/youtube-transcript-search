@@ -301,29 +301,18 @@ def search_vtt(vtt_path: Path, terms: list[str], target_name: str) -> list[dict]
     video_id    = fm.group(2) if fm else stem
     video_title = fm.group(3).replace("_", " ") if fm else stem
 
-    single_word_terms = {t for t in terms if " " not in t}
     seen_positions: set[int] = set()
     results = []
 
     for term in terms:
         term_lower = term.lower()
         term_len = len(term)
-        llm_verdict, confidence = None, None
-        llm_checked = False
 
         pos = full_lower.find(term_lower)
         while pos != -1:
             if pos in seen_positions:
                 pos = full_lower.find(term_lower, pos + 1)
                 continue
-
-            # LLM verification on first occurrence only
-            if not llm_checked and term in single_word_terms and len(target_name.split()) >= 2:
-                context = extract_context(full_text, pos, pos + term_len)
-                llm_verdict, confidence = llm_verify(context, term, target_name)
-                llm_checked = True
-                if llm_verdict.upper().startswith("NO"):
-                    break  # skip all occurrences of this term
 
             match_ts = 0
             for s, e, ts in cue_map:
@@ -340,8 +329,6 @@ def search_vtt(vtt_path: Path, terms: list[str], target_name: str) -> list[dict]
                 "match_timestamp": match_ts,
                 "matched_term": term,
                 "context": context,
-                "llm_verdict": llm_verdict,
-                "confidence": confidence,
             })
 
             pos = full_lower.find(term_lower, pos + term_len)
