@@ -49,6 +49,7 @@ status: dict = {
 current_proc: Optional[subprocess.Popen] = None
 cancel_requested: bool = False
 search_running: bool = False
+search_generation: int = 0
 
 
 # --- Name expansion ---
@@ -411,6 +412,7 @@ def stream_download_and_search(
     target_name: str,
     sample_size: Optional[int],
     random_sample: bool,
+    generation: int = 0,
 ):
     global current_proc
 
@@ -480,7 +482,7 @@ def stream_download_and_search(
             "message": f"Searching {n_cached} cached transcripts...",
         })
         for i, vtt in enumerate(cached_vtts, 1):
-            if cancel_requested:
+            if cancel_requested or search_generation != generation:
                 return
             stem = re.sub(r"\.en$", "", vtt.stem)
             fm = FNAME_RE.match(stem)
@@ -535,7 +537,7 @@ def stream_download_and_search(
         sys.executable, "-m", "yt_dlp",
         "--skip-download", "--write-sub", "--write-auto-sub",
         "--sub-lang", "en", "--convert-subs", "vtt",
-        "--ignore-no-formats-error",
+        "--ignore-no-formats-error", "--no-overwrites",
         "--output", str(out_dir / "%(upload_date)s_%(id)s_%(title)s.%(ext)s"),
         "--no-warnings", "--ignore-errors",
     ]
@@ -682,7 +684,8 @@ def stream_download_and_search(
 
 def run_search(
     channel_url: str, name: str, extra_terms: list[str],
-    sample_size: Optional[int] = None, random_sample: bool = False
+    sample_size: Optional[int] = None, random_sample: bool = False,
+    generation: int = 0,
 ):
     global cancel_requested, search_running
     cancel_requested = False
@@ -696,7 +699,7 @@ def run_search(
         ))
         status["terms"] = sorted(terms)
 
-        stream_download_and_search(channel_url, out_dir, terms, name, sample_size, random_sample)
+        stream_download_and_search(channel_url, out_dir, terms, name, sample_size, random_sample, generation)
 
         if status.get("stage") == "error":
             return
@@ -760,7 +763,10 @@ async def preview_terms(req: SearchRequest):
 
 @app.post("/search")
 async def search(req: SearchRequest, background_tasks: BackgroundTasks):
-    global cancel_requested, search_running
+    global cancel_requested, search_running, search_generation
+    search_generation += 1
+    gen = search_generation
+
     if search_running:
         cancel_requested = True
         search_running = False
@@ -778,7 +784,7 @@ async def search(req: SearchRequest, background_tasks: BackgroundTasks):
 
     background_tasks.add_task(
         run_search, req.channel_url, req.name, req.extra_terms,
-        req.sample_size, req.random_sample
+        req.sample_size, req.random_sample, gen
     )
     return {"status": "started"}
 
