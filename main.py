@@ -495,9 +495,11 @@ def stream_download_and_search(
 
     # --- Phase 2: fetch video list, find missing IDs, run yt-dlp ---
 
+    log(f"Cache phase complete ({len(cached_ids)} video(s) cached). Fetching channel video list...")
     status.update({"stage": "downloading", "message": "Fetching video list..."})
     all_ids = fetch_video_ids(target_url)
     if not all_ids:
+        log("Could not fetch video list from YouTube (rate-limited or network error).")
         return
 
     # Apply sample logic to the full list
@@ -509,10 +511,10 @@ def stream_download_and_search(
         candidate_ids = all_ids
 
     missing_ids = [vid for vid in candidate_ids if vid not in cached_ids]
+    log(f"Video list: {len(all_ids)} total, {len(cached_ids)} cached, {len(missing_ids)} to download.")
 
     if not missing_ids:
-        status.update({"message": "All videos already cached — no new downloads needed."})
-        log("All videos already cached.")
+        log("All videos already cached — no new downloads needed.")
         return
 
     n_missing = len(missing_ids)
