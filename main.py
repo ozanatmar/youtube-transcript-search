@@ -564,21 +564,23 @@ def stream_download_and_search(
             emit_vtt_result(current_vtt, current_video_id, current_item, current_total)
             current_vtt = None
         elif has_transcript is False and (current_item > 0 or current_video_id):
-            # yt-dlp said no subtitles — check if we actually have a cached VTT for this ID
-            # (can happen if yt-dlp is rate-limited but the file exists from a prior run)
-            fallback = (
-                next(out_dir.glob(f"*_{current_video_id}_*.en.vtt"), None)
-                if current_video_id and current_video_id not in cached_ids
-                else None
-            )
-            if fallback:
-                cached_ids.add(current_video_id)
-                emit_vtt_result(fallback, current_video_id, current_item, current_total)
+            if current_video_id and current_video_id in cached_ids:
+                # Already searched in Phase 1 — skip silently
+                pass
             else:
-                url = yt_url(current_video_id)
-                p = prefix(current_item, current_total)
-                log_or_replace(f"{p}no transcript  {url}")
-                status["total_videos_processed"] += 1
+                # Not cached — check disk in case yt-dlp was rate-limited but file exists
+                fallback = (
+                    next(out_dir.glob(f"*_{current_video_id}_*.en.vtt"), None)
+                    if current_video_id else None
+                )
+                if fallback:
+                    cached_ids.add(current_video_id)
+                    emit_vtt_result(fallback, current_video_id, current_item, current_total)
+                else:
+                    url = yt_url(current_video_id)
+                    p = prefix(current_item, current_total)
+                    log_or_replace(f"{p}no transcript  {url}")
+                    status["total_videos_processed"] += 1
         has_transcript = False
 
     for raw_line in proc.stdout:
